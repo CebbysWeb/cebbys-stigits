@@ -35,13 +35,13 @@ export interface BoardView {
   interactive: boolean
 }
 
-export function boardSvg(v: BoardView): string {
-  // Frame the pattern plus a margin wide enough for any legal target.
-  const vb = viewBox(v.pattern, 1.6)
-  const [x0, y0, w, h] = vb.split(' ').map(Number)
-  const dots: string[] = []
-  for (let x = Math.ceil(x0); x <= x0 + w; x++)
-    for (let y = Math.ceil(y0); y <= y0 + h; y++) dots.push(`<circle class="dot" cx="${x}" cy="${y}" r="0.04"/>`)
+/** An endless dot grid: a pattern tile repeated over a plane far larger than any view. */
+const GRID = `<defs><pattern id="grid-dots" width="1" height="1" x="-0.5" y="-0.5" patternUnits="userSpaceOnUse">
+  <circle class="dot" cx="0.5" cy="0.5" r="0.04"/></pattern></defs>
+  <rect x="-500" y="-500" width="1000" height="1000" fill="url(#grid-dots)"/>`
+
+export function boardSvg(v: BoardView, vb: string): string {
+  const dots = [GRID]
 
   const sticks = v.pattern.map((s, i) => {
     const cls = ['stick', i === v.selected ? 'selected' : '', v.interactive ? 'pickable' : '',
@@ -49,6 +49,11 @@ export function boardSvg(v: BoardView): string {
     return matchstick(s, `class="${cls.join(' ')}" data-stick="${i}"`) +
       (v.interactive ? line(s, `class="hit" data-stick="${i}"`) : '')
   })
-  const targets = v.targets.map((t, i) => line(t, 'class="ghost"') + line(t, `class="hit" data-target="${i}"`))
-  return `<svg class="board" viewBox="${vb}">${dots.join('')}${sticks.join('')}${targets.join('')}</svg>`
+  const targets = v.targets.map((t, i) => line(t, `class="ghost" data-ghost="${i}"`))
+  return `<svg class="board ${v.interactive ? 'interactive' : ''}" viewBox="${vb}">${dots.join('')}${targets.join('')}${sticks.join('')}<g class="drag-layer"></g></svg>`
+}
+
+/** Midpoint of a stick in lattice coordinates, for snapping a dragged stick. */
+export function midpoint(s: Stick): { x: number; y: number } {
+  return s.d === 'H' ? { x: s.x + 0.5, y: s.y } : { x: s.x, y: s.y + 0.5 }
 }

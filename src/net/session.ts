@@ -1,9 +1,15 @@
 import Peer, { type DataConnection } from 'peerjs'
-import { applyAction, newGame, type Action, type GameState, type Variant } from '../engine/game'
+import { allMoves, applyAction, findMatchingMove, newGame, type Action, type GameState, type Variant } from '../engine/game'
 
 const PEER_PREFIX = 'cebbys-stigits-'
 export const HOST_ID = 'host'
 export const MAX_PLAYERS = 4
+/** Code shown for an offline practice game, which has no peer to join. */
+export const LOCAL_CODE = 'LOCAL'
+const BOT_PREFIX = 'bot-'
+const BOT_NAMES = ['Robo Rita', 'Bolt', 'Sir Sparks', 'Gizmo']
+const BOT_DELAY_MS = 900
+export const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX)
 
 export interface LobbyPlayer {
   id: string
@@ -76,16 +82,20 @@ export interface SessionEvents {
   onDisconnect?(): void
 }
 
-/** The host's browser is the game server: it owns the snapshot and validates every action. */
+/**
+ * The host's browser is the game server: it owns the snapshot and validates every
+ * action. Bots are played here too. Without a peer it runs an offline practice game.
+ */
 export class HostSession implements Session {
   readonly myId = HOST_ID
   readonly isHost = true
   snapshot: Snapshot
   private conns = new Map<string, DataConnection>()
-  private peer: Peer
+  private peer: Peer | null
   private events: SessionEvents
+  private botTimer = 0
 
-  private constructor(peer: Peer, code: string, name: string, events: SessionEvents) {
+  private constructor(peer: Peer | null, code: string, name: string, events: SessionEvents) {
     this.peer = peer
     this.events = events
     this.snapshot = {
@@ -95,8 +105,50 @@ export class HostSession implements Session {
       rounds: 3,
       game: null,
     }
-    peer.on('connection', (conn) => this.accept(conn))
-    peer.on('disconnected', () => peer.reconnect())
+    peer?.on('connection', (conn) => this.accept(conn))
+    peer?.on('disconnected', () => peer.reconnect())
+  }
+
+  /** An offline game against bots: no network needed. */
+  static local(name: string, events: SessionEvents): HostSession {
+    const session = new HostSession(null, LOCAL_CODE, name, events)
+    session.addBot()
+    return session
+  }
+
+  get isLocal(): boolean {
+    return this.peer === null
+  }
+
+  addBot(): void {
+    const s = this.snapshot
+    if (s.game || s.players.length >= MAX_PLAYERS) return
+    const used = new Set(s.players.map((p) => p.id))
+    const n = BOT_NAMES.findIndex((_, i) => !used.has(BOT_PREFIX + i))
+    s.players.push({ id: BOT_PREFIX + n, name: BOT_NAMES[n], connected: true })
+    this.publish()
+  }
+
+  removePlayer(id: string): void {
+    if (this.snapshot.game || !isBot(id)) return
+    this.snapshot.players = this.snapshot.players.filter((p) => p.id !== id)
+    this.publish()
+  }
+
+  // Bots take a matching move when they have one, otherwise a random legal move.
+  private scheduleBot(): void {
+    const g = this.snapshot.game
+    if (this.botTimer || !g || g.phase !== 'playing' || !isBot(g.players[g.current].id)) return
+    this.botTimer = window.setTimeout(() => {
+      this.botTimer = 0
+      const game = this.snapshot.game
+      if (!game || game.phase !== 'playing') return
+      const bot = game.players[game.current]
+      if (!isBot(bot.id)) return
+      const moves = allMoves(game)
+      const move = findMatchingMove(game) ?? moves[Math.floor(Math.random() * moves.length)]
+      this.handle({ type: 'move', playerId: bot.id, ...move })
+    }, BOT_DELAY_MS)
   }
 
   static async create(name: string, events: SessionEvents): Promise<HostSession> {
@@ -196,10 +248,12 @@ export class HostSession implements Session {
     const msg: ToClient = { t: 'snapshot', snapshot: this.snapshot }
     for (const c of this.conns.values()) if (c.open) c.send(msg)
     this.events.onSnapshot(structuredClone(this.snapshot))
+    this.scheduleBot()
   }
 
   destroy(): void {
-    this.peer.destroy()
+    clearTimeout(this.botTimer)
+    this.peer?.destroy()
   }
 }
 

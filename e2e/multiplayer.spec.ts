@@ -1,5 +1,34 @@
 import { expect, test, type Page } from '@playwright/test'
 
+const center = async (p: Page, selector: string) => {
+  const r = await p.locator(selector).evaluate((el) => {
+    const b = el.getBoundingClientRect()
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  })
+  return r
+}
+
+/** Press on a movable stick, drag it to the first highlighted spot and release. */
+async function dragStick(p: Page): Promise<void> {
+  await p.locator('.hit[data-stick]').first().waitFor({ state: 'attached' })
+  const count = await p.locator('.hit[data-stick]').count()
+  for (let i = 0; i < count; i++) {
+    const from = await center(p, `.hit[data-stick="${i}"]`)
+    await p.mouse.move(from.x, from.y)
+    await p.mouse.down()
+    if (await p.locator('.ghost').count()) {
+      const to = await center(p, '.ghost[data-ghost="0"]')
+      await p.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 })
+      await p.mouse.move(to.x, to.y, { steps: 4 })
+      await expect(p.locator('.ghost.hot')).toHaveCount(1)
+      await p.mouse.up()
+      return
+    }
+    await p.mouse.up()
+  }
+  throw new Error('No movable stick')
+}
+
 // Two isolated browser contexts play a whole game over PeerJS/WebRTC.
 // Needs internet access for the public PeerJS signaling server.
 const BASE = process.env.E2E_URL ?? 'http://localhost:4173/'
@@ -27,15 +56,51 @@ for (const variant of ['standard', 'plus'] as const) {
     await host.click('[data-act=start]')
     await expect(guest.locator('.board')).toBeVisible()
 
-    // First move through the real UI: tap a stick, then tap a highlighted spot.
-    await host.locator('.hit[data-stick]').first().waitFor({ state: 'attached' })
-    const sticks = host.locator('.hit[data-stick]')
-    for (let i = 0; i < (await sticks.count()); i++) {
-      await sticks.nth(i).dispatchEvent('click')
-      if (await host.locator('.hit[data-target]').count()) break
-    }
-    await host.locator('.hit[data-target]').first().dispatchEvent('click')
+    // First move through the real UI: drag a stick onto a green spot.
+    await dragStick(host)
     await expect.poll(() => guest.evaluate(() => window.__stigits!.snapshot()!.game!.lastMove !== null)).toBe(true)
+    // Rearrange the hand: drag the first card past the last one.
+    const cardsBefore = await host.evaluate(() => window.__stigits!.handOrder())
+    await host.locator('.seat.me .fan').scrollIntoViewIfNeeded()
+    // Cards overlap in the fan, so grab the first card by its visible left edge.
+    const firstBox = (await host.locator(`.hand-card[data-card="${cardsBefore[0]}"]`).boundingBox())!
+    const first = { x: firstBox.x + firstBox.width * 0.2, y: firstBox.y + firstBox.height / 2 }
+    const last = await center(host, `.hand-card[data-card="${cardsBefore[cardsBefore.length - 1]}"]`)
+    await host.mouse.move(first.x, first.y)
+    await host.mouse.down()
+    await host.mouse.move(last.x + 40, last.y, { steps: 8 })
+    await host.screenshot({ path: `e2e/results/${variant}-host-dragging-card.png` })
+    await host.mouse.up()
+    const order = await host.evaluate(() => window.__stigits!.handOrder())
+    expect(order[order.length - 1]).toBe(cardsBefore[0])
+
+    // Pan the board from an empty corner; the camera then drifts back to centre.
+    await host.locator('.board').scrollIntoViewIfNeeded()
+    // Distance of the view centre from the sticks' centre of mass, in board units.
+    const offCentre = () => host.evaluate(() => {
+      const [x, y, w, h] = document.querySelector('.board')!.getAttribute('viewBox')!.split(' ').map(Number)
+      const mids = window.__stigits!.snapshot()!.game!.pattern.map((s) => (s.d === 'H' ? [s.x + 0.5, -s.y] : [s.x, -s.y - 0.5]))
+      const cx = mids.reduce((a, m) => a + m[0], 0) / mids.length
+      const cy = mids.reduce((a, m) => a + m[1], 0) / mids.length
+      return Math.hypot(x + w / 2 - cx, y + h / 2 - cy)
+    })
+    const box = (await host.locator('.board').boundingBox())!
+    await host.mouse.move(box.x + 12, box.y + 12)
+    await host.mouse.down()
+    await host.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4, { steps: 6 })
+    const panned = await offCentre()
+    expect(panned).toBeGreaterThan(0.5)
+    await host.screenshot({ path: `e2e/results/${variant}-host-panned.png` })
+    await host.mouse.up()
+    await expect.poll(offCentre, { timeout: 8000 }).toBeLessThan(0.1)
+
+    // The guest moves next, by dragging too.
+    if (await guest.evaluate(() => { const g = window.__stigits!.snapshot()!.game!; return g.phase === 'playing' && g.players[g.current].id === window.__stigits!.myId() })) {
+      const lastMove = () => host.evaluate(() => JSON.stringify(window.__stigits!.snapshot()!.game!.lastMove))
+      const before = await lastMove()
+      await dragStick(guest)
+      await expect.poll(lastMove).not.toBe(before)
+    }
     await host.screenshot({ path: `e2e/results/${variant}-host-midgame.png` })
     await guest.screenshot({ path: `e2e/results/${variant}-guest-mobile.png`, fullPage: true })
 

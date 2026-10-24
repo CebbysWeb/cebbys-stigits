@@ -61,32 +61,48 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
 
 .game { display: flex; flex-direction: column; gap: 12px; }
 .game header { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.9rem; flex-wrap: wrap; gap: 8px; }
-.players-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-.opponent { background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 8px 10px; }
-.opponent.active { border-color: var(--accent); }
-.opponent .who { font-weight: 600; }
-.opponent .meta { font-size: 0.85rem; color: var(--muted); }
-.opponent .off { color: var(--head); font-weight: 400; font-size: 0.8rem; }
-.mini { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
-.mini .card-shape { width: 26px; height: 26px; background: var(--bg); border-radius: 4px; }
-
 .table { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px; text-align: center; }
 .turn { margin: 0 0 8px; font-weight: 600; color: var(--muted); }
 .turn.mine { color: var(--accent); }
-.board { width: 100%; max-height: 52vh; touch-action: manipulation; }
+.board {
+  width: 100%; aspect-ratio: 4 / 3; max-height: 46vh; display: block; margin: 0 auto;
+  touch-action: none; cursor: grab;
+  /* Fade the endless grid out towards the edges. */
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at center, #000 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at center, #000 55%, transparent 100%);
+}
+.board.panning { cursor: grabbing; }
 .dot { fill: var(--dot); }
 .shaft { stroke: var(--wood); stroke-width: 0.12; stroke-linecap: round; }
 .head { fill: var(--head); }
 .stick.moved .shaft { stroke: #f59e0b; }
 .stick.selected { opacity: 0.35; }
-.hit { stroke: transparent; stroke-width: 0.45; cursor: pointer; pointer-events: stroke; }
-.stick { pointer-events: none; }
-.ghost { stroke: var(--ghost); stroke-width: 0.1; stroke-dasharray: 0.12 0.1; stroke-linecap: round; pointer-events: none; }
-.hit[data-target]:hover + .ghost, .hit[data-target]:hover { stroke: color-mix(in srgb, var(--ghost) 30%, transparent); }
+.hit { stroke: transparent; stroke-width: 0.5; cursor: grab; pointer-events: stroke; }
+.board.dragging, .board.dragging .hit { cursor: grabbing; }
+.stick { pointer-events: none; transition: opacity 0.15s; }
+.ghost { stroke: var(--ghost); stroke-width: 0.1; stroke-dasharray: 0.12 0.1; stroke-linecap: round; pointer-events: none; opacity: 0.7; transition: all 0.12s; }
+.ghost.hot { stroke-width: 0.2; opacity: 1; stroke-dasharray: none; }
+.stick.held { pointer-events: none; filter: drop-shadow(0 0.08px 0.08px rgb(0 0 0 / 0.4)); }
+.stick.held .shaft { stroke-width: 0.15; }
+.stick.held.snapped .shaft { stroke: #f59e0b; }
 .last { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 0.85rem; }
 .last .card { width: 64px; }
 
-.hand .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.fan { position: relative; width: 100%; user-select: none; -webkit-user-select: none; }
+.hand-card {
+  position: absolute; left: 0; top: 0; aspect-ratio: 3 / 4; padding: 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.12); transform-origin: 50% 120%;
+  transition: transform 0.28s cubic-bezier(.2,.8,.3,1.1), opacity 0.28s, box-shadow 0.2s;
+  touch-action: none; cursor: grab;
+}
+.hand-card .card-shape { width: 100%; height: 100%; pointer-events: none; }
+.hand-card.entering { opacity: 0; }
+.hand-card.leaving { opacity: 0; pointer-events: none; transform: translateY(-120px) scale(0.7) !important; }
+.hand-card.dragging { transition: box-shadow 0.2s; cursor: grabbing; box-shadow: 0 10px 24px rgb(0 0 0 / 0.25); }
+@media (hover: hover) {
+  .hand-card:not(.dragging):hover { box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); border-color: var(--accent); }
+}
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px; aspect-ratio: 3 / 4; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .card .card-shape { width: 100%; height: 100%; }
 .card.played { border-color: var(--accent); aspect-ratio: auto; }
@@ -107,3 +123,33 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
   transition: all 0.2s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px);
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* The table: me at the bottom, opponents around the edges in turn order. */
+.table-layout {
+  display: grid; gap: 8px; align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: ". top ." "left center right" "bottom bottom bottom";
+}
+.table-layout .table { grid-area: center; min-width: 0; }
+.seat { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.seat-top { grid-area: top; }
+.seat-left { grid-area: left; }
+.seat-right { grid-area: right; }
+.seat-bottom { grid-area: bottom; align-items: stretch; }
+.seat-label { font-size: 0.85rem; text-align: center; color: var(--muted); }
+.seat-label b { color: var(--ink); }
+.seat-label .meta { display: block; font-size: 0.75rem; }
+.seat.active .seat-label b { color: var(--accent); }
+.seat-top .seat-fan { width: min(320px, 70vw); transform: rotate(180deg); }
+.seat-left, .seat-right { width: 96px; align-self: stretch; position: relative; justify-content: center; }
+.seat-left .seat-fan, .seat-right .seat-fan { position: absolute; top: 50%; left: 50%; }
+.seat-left .seat-fan { transform: translate(-50%, -50%) rotate(90deg); }
+.seat-right .seat-fan { transform: translate(-50%, -50%) rotate(-90deg); }
+.seat-left .seat-label, .seat-right .seat-label { position: absolute; top: 0; z-index: 2; }
+.fan.small { opacity: 0.4; transition: opacity 0.3s; pointer-events: none; }
+.seat.active .fan.small { opacity: 0.75; }
+.fan.small .hand-card { padding: 3px; border-radius: 6px; box-shadow: none; }
+@media (max-width: 560px) {
+  .seat-left, .seat-right { width: 64px; }
+  .seat-label { font-size: 0.75rem; }
+}
