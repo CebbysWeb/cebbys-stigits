@@ -2,6 +2,7 @@ import './style.css'
 import { legalTargets } from './engine/geometry'
 import { allMoves, findMatchingMove, matchingCard, PILE_MAX, PILE_MIN, PILE_STEP, winnerNames, type GameState, type Settings } from './engine/game'
 import { guessLang, langPickerHtml, setLang, t, translateError, type Lang } from './i18n'
+import { playMove, playMyTurn, setSoundOn } from './ui/sfx'
 import { ClientSession, forgetSavedGames, HostSession, savedGuestGame, savedHostGame, type NetState, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
@@ -42,12 +43,17 @@ function seatSides(k: number): string[] {
 // The stick being dragged on the board, and the target it would snap to on release.
 let drag: { index: number; pointerId: number; targets: Stick[]; snap: number | null } | null = null
 let status = ''
+/** When the current turn runs out, on this device's clock; null with no time limit. */
+let turnEndsAt: number | null = null
 
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
 /** This device's player profile (name and colour), remembered between visits. */
 const profile = loadProfile()
+setSoundOn(profile.sound !== false)
+/** A speaker; struck through by CSS when sound is off. */
+const SOUND_ICON = '<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/><path class="cross" d="M16 9l6 6M22 9l-6 6"/></svg>'
 setLang(profile.lang ?? guessLang())
 
 function joinCodeFromUrl(): string | null {
@@ -77,7 +83,16 @@ const events = {
   onSnapshot(s: Snapshot) {
     const prevMove = snapshot?.game?.lastMove
     const prevClaim = snapshot?.game?.lastClaim?.seq
+    const prev = snapshot?.game
+    const next = s.game
+    // Sounds: a tock whenever the shape changes, a chime when the turn comes to me.
+    if (prev && next && next.moveCount > prev.moveCount) playMove()
+    const myTurnNow = (g: GameState | null | undefined) =>
+      !!g && g.phase === 'playing' && g.players[g.current]?.id === session?.myId
+    if (myTurnNow(next) && (!myTurnNow(prev) || prev!.round !== next!.round)) playMyTurn()
     snapshot = s
+    // The deadline is on the host's clock; keep only the time left, measured on ours.
+    turnEndsAt = s.deadline ? Date.now() + (s.deadline - (s.sentAt ?? s.deadline)) : null
     const c = s.game?.lastClaim
     // A correctly played card flies from the hand that played it to the pile.
     // Find it in its hand now, before the redraw removes it.
@@ -319,6 +334,7 @@ function renderLobby(s: Snapshot): string {
     ${rounds ? row(t.wrongGuess, t.wrongGuessPoints, select('penalty', [[0, t.nothing], [1, t.points(1)], [2, t.points(2)]]))
       : missPicker}
     ${row(t.moveHints, t.moveHintsAbout, toggle('hints'))}
+    ${row(t.turnLimit, t.turnLimitAbout, select('turnLimit', [[0, t.noLimit], [1, t.minutes(1)], [2, t.minutes(2)], [5, t.minutes(5)]]))}
     ${row(t.botSpeed, t.botSpeedAbout, select('botSpeed', [['relaxed', t.relaxed], ['normal', t.normal], ['quick', t.quick]]))}`
 
   return `<main class="lobby">
@@ -389,7 +405,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       }).join('')}
       <div class="play-area"></div>
       <div class="table">
-        <p class="turn ${myTurn ? 'mine' : ''}">${turnText}${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
+        <p class="turn ${myTurn ? 'mine' : ''}">${turnText}${turnEndsAt && g.phase === 'playing' ? ` <span class="turn-timer" title="${t.timeLeft}">${clock()}</span>` : ''}${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
         ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn, hints: g.settings.hints }, camViewBox(g))}
       </div>
       ${seat(me)}
@@ -397,6 +413,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       <div id="draw-slot"></div>
     </section>
     <button class="help-btn" data-act="help" aria-label="${t.controls}">?</button>
+    <button class="help-btn sound-btn ${profile.sound === false ? 'off' : ''}" data-act="sound" aria-pressed="${profile.sound !== false}" aria-label="${t.sound}" title="${t.sound}">${SOUND_ICON}</button>
     <button class="help-btn quit-btn" data-act="quit" aria-label="${t.quit}" title="${t.quit}">×</button>
     ${helpOpen ? `<div class="help-panel" role="dialog" aria-label="${t.controls}">
       <button class="help-close" data-act="help-close" aria-label="${t.close}">×</button>
@@ -452,6 +469,12 @@ app.addEventListener('click', async (e) => {
       setLang(profile.lang)
       paintDrawPile()
       pile.update(snapshot?.game?.played.map((p) => p.card) ?? [])
+      return render()
+    case 'sound':
+      profile.sound = profile.sound === false
+      saveProfile(profile)
+      setSoundOn(profile.sound)
+      if (profile.sound) playMove()
       return render()
     case 'help':
       helpOpen = !helpOpen
@@ -598,6 +621,21 @@ function placePiles(): void {
   drawPile.style.top = top
 }
 
+/** Time left in the turn as m:ss. */
+function clock(): string {
+  const left = Math.max(0, Math.ceil(((turnEndsAt ?? 0) - Date.now()) / 1000))
+  return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+}
+
+// Update the countdown in place, so the board isn't rebuilt every second.
+function tickTimer(): void {
+  const el = app.querySelector<HTMLElement>('.turn-timer')
+  if (!el || !turnEndsAt) return
+  const text = clock()
+  if (el.textContent !== text) el.textContent = text
+  el.classList.toggle('low', turnEndsAt - Date.now() < 10_000)
+}
+
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
@@ -614,6 +652,7 @@ function frame(now: number): void {
   }
   if (!g) cam.ready = false
   placePiles()
+  tickTimer()
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)

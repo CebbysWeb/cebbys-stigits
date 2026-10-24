@@ -28,10 +28,12 @@ export interface Settings {
   /** Show the green spots a picked-up stick can go to. */
   hints: boolean
   botSpeed: 'relaxed' | 'normal' | 'quick'
+  /** Minutes each player has per turn; 0 means no limit. */
+  turnLimit: 0 | 1 | 2 | 5
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal',
+  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal', turnLimit: 0,
 }
 
 export const PILE_MIN = 10

@@ -10,6 +10,8 @@ export interface Profile {
   v: number
   /** Chosen language; unset means follow the browser. */
   lang?: Lang
+  /** Sound effects; unset means on. */
+  sound?: boolean
 }
 
 const PROFILE_KEY = 'stigits-profile'
@@ -40,7 +42,7 @@ export function loadProfile(): Profile {
   } catch {
     /* ignore */
   }
-  return { name: p.name ?? legacy, lang: p.lang, h: p.h ?? Math.floor(Math.random() * 360), s: p.s ?? 0.8, v: p.v ?? 0.9 }
+  return { name: p.name ?? legacy, lang: p.lang, sound: p.sound, h: p.h ?? Math.floor(Math.random() * 360), s: p.s ?? 0.8, v: p.v ?? 0.9 }
 }
 
 export const saveProfile = (p: Profile): void => write(PROFILE_KEY, p)

@@ -33,6 +33,10 @@ export interface Snapshot {
   players: LobbyPlayer[]
   settings: Settings
   game: GameState | null
+  /** When the current turn runs out, on the host's clock, or null with no limit. */
+  deadline?: number | null
+  /** The host's clock when this snapshot was sent, so guests can turn `deadline` into time left. */
+  sentAt?: number
 }
 
 type ToHost = { t: 'hello'; pid: string; name: string; color?: string } | { t: 'action'; action: Action }
@@ -148,6 +152,8 @@ export class HostSession implements Session {
   private botTimer = 0
   private botClaims = new Map<string, number>()
   private offlineTimer = 0
+  private limitTimer = 0
+  private limitTurn = ''
   private closed = false
 
   private constructor(peer: Peer | null, code: string, name: string, color: string, events: SessionEvents) {
@@ -355,13 +361,39 @@ export class HostSession implements Session {
 
   private publish(): void {
     if (this.closed) return
+    this.snapshot.sentAt = Date.now()
     const msg: ToClient = { t: 'snapshot', snapshot: this.snapshot }
     for (const c of this.conns.values()) if (c.open) c.send(msg)
     this.events.onSnapshot(structuredClone(this.snapshot))
     this.scheduleBot()
     this.scheduleBotClaims()
+    this.scheduleTurnLimit()
     this.scheduleOfflineSkip()
     if (this.peer) writeSaved(HOST_SAVE_KEY, { snapshot: this.snapshot })
+  }
+
+  // With a time limit, each turn gets a deadline when it starts; at the deadline the host ends it.
+  private scheduleTurnLimit(): void {
+    const g = this.snapshot.game
+    const limit = g?.settings.turnLimit ?? 0
+    const turn = g && g.phase === 'playing' && limit ? `${g.round}:${g.turn}:${g.current}` : ''
+    if (turn === this.limitTurn) return
+    this.limitTurn = turn
+    clearTimeout(this.limitTimer)
+    if (!turn) {
+      if (this.snapshot.deadline) {
+        this.snapshot.deadline = null
+        this.publish()
+      }
+      return
+    }
+    const ms = limit * 60_000
+    this.snapshot.deadline = Date.now() + ms
+    const who = g!.players[g!.current].id
+    this.limitTimer = window.setTimeout(() => {
+      if (this.limitTurn === turn) this.handle({ type: 'endTurn', playerId: who })
+    }, ms)
+    this.publish()
   }
 
   // Don't let the table wait forever on a player whose connection dropped.
@@ -386,6 +418,7 @@ export class HostSession implements Session {
 
   destroy(): void {
     this.closed = true
+    clearTimeout(this.limitTimer)
     clearTimeout(this.offlineTimer)
     clearTimeout(this.botTimer)
     for (const t of this.botClaims.values()) clearTimeout(t)

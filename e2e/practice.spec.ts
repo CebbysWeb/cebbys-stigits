@@ -193,3 +193,20 @@ test('played cards fly from the hand that played them onto the pile', async ({ b
   expect(sawMine).toBe(true)
   expect(sawBot).toBe(true)
 })
+
+test('a turn time limit counts down and ends the turn when it runs out', async ({ browser }) => {
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage()
+  await page.clock.install()
+  await page.goto(BASE)
+  await page.click('[data-act=practice]')
+  await page.selectOption('[data-setting=turnLimit]', '1')
+  await page.click('[data-act=start]')
+  await expect(page.locator('.turn-timer')).toHaveText(/^(1:00|0:59)$/)
+  await page.clock.fastForward(30_000)
+  await expect(page.locator('.turn-timer')).toHaveText(/^0:(29|30)$/)
+  await page.clock.fastForward(25_000)
+  await expect(page.locator('.turn-timer.low')).toBeVisible()
+  // Out of time: the turn passes to the bot without me ending it.
+  await page.clock.fastForward(6_000)
+  await expect.poll(() => page.evaluate(() => window.__stigits!.snapshot()!.game!.current)).toBe(1)
+})

@@ -133,6 +133,12 @@ const en = {
   resumeAbout: 'Pick up where you left off.',
   resume: 'Resume',
   forget: 'Dismiss',
+  turnLimit: 'Turn time',
+  turnLimitAbout: 'When time runs out, the turn ends by itself.',
+  noLimit: 'No limit',
+  minutes: (n: number) => `${n} min`,
+  timeLeft: 'Time left this turn',
+  sound: 'Sound',
   stickHolds: 'That stick holds the pattern together — pick another.',
 }
 
@@ -269,6 +275,12 @@ const lv: Dict = {
   resumeAbout: 'Turpini, kur palika.',
   resume: 'Turpināt',
   forget: 'Aizmirst',
+  turnLimit: 'Gājiena laiks',
+  turnLimitAbout: 'Kad laiks beidzas, gājiens beidzas pats.',
+  noLimit: 'Bez limita',
+  minutes: (n) => `${n} min`,
+  timeLeft: 'Atlikušais gājiena laiks',
+  sound: 'Skaņa',
   stickHolds: 'Šis sērkociņš satur figūru kopā — izvēlies citu.',
 }
 
@@ -410,6 +422,12 @@ const ru: Dict = {
   resumeAbout: 'Продолжи с того же места.',
   resume: 'Продолжить',
   forget: 'Скрыть',
+  turnLimit: 'Время на ход',
+  turnLimitAbout: 'Когда время выйдет, ход закончится сам.',
+  noLimit: 'Без лимита',
+  minutes: (n) => `${n} мин`,
+  timeLeft: 'Осталось времени на ход',
+  sound: 'Звук',
   stickHolds: 'Эта спичка держит фигуру целой — выбери другую.',
 }
 

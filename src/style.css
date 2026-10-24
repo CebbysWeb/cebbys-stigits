@@ -370,7 +370,7 @@ body:has(.game) { background-color: var(--paper); overflow: hidden; }
 @media (max-width: 560px) {
   .game header { font-size: 0.75rem; }
   .game header .code { display: none; }
-  .turn { white-space: normal; text-align: center; width: calc(100vw - 72px); left: calc(50% + 26px); top: 14px; font-size: 0.8rem; }
+  .turn { white-space: normal; text-align: center; width: calc(100vw - 168px); left: calc(50% + 24px); top: 14px; font-size: 0.8rem; }
 }
 
 /* After a move, End turn pulses to say the turn can be finished. */
@@ -496,3 +496,15 @@ button.big { min-height: 56px; font-size: 1.1rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .resume-card { border-color: var(--accent); }
 .leave-btn { min-height: 36px; padding: 6px 14px; }
+
+/* Turn countdown beside the turn text; it turns red for the last ten seconds. */
+.turn-timer { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: #0f172a; color: #fff; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.turn-timer.low { background: #dc2626; animation: timer-pulse 1s ease-in-out infinite; }
+@keyframes timer-pulse { 50% { transform: scale(1.08); } }
+
+/* Sound toggle sits beside the help button. */
+.sound-btn { left: 60px; display: grid; place-items: center; }
+.sound-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sound-btn .cross, .sound-btn.off .waves { display: none; }
+.sound-btn.off .cross { display: inline; }
+.sound-btn.off { color: var(--muted); }
