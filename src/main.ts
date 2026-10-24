@@ -328,10 +328,7 @@ function camViewBox(g: GameState): string {
     cam.ready = true
   }
   const h = cam.w * boardAspect()
-  // The scoreboard covers the left edge, so centre the sticks in the space beside it.
-  const covered = document.querySelector<HTMLElement>('.scoreboard')?.getBoundingClientRect().right ?? 0
-  const shift = (covered / 2) * (cam.w / Math.max(1, window.innerWidth))
-  return `${cam.x - cam.w / 2 - shift} ${cam.y - h / 2} ${cam.w} ${h}`
+  return `${cam.x - cam.w / 2} ${cam.y - h / 2} ${cam.w} ${h}`
 }
 
 let lastFrame = performance.now()

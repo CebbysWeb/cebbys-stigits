@@ -232,7 +232,6 @@ body:has(.game) { background-color: var(--paper); }
 .sb-score { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; grid-row: span 2; align-self: center; }
 .sb-meta { font-size: 0.72rem; color: var(--muted); }
 .table-layout { padding-left: calc(var(--sb-width) + 24px); }
-.turn, .last { left: calc(50% + var(--sb-width) / 2 + 6px); }
 @media (max-width: 560px) {
   :root { --sb-width: 96px; }
   .scoreboard { left: 6px; padding: 6px; top: 84px; }

@@ -52,10 +52,7 @@ for (const variant of ['two-player'] as const) {
       const mids = window.__stigits!.snapshot()!.game!.pattern.map((s) => (s.d === 'H' ? [s.x + 0.5, -s.y] : [s.x, -s.y - 0.5]))
       const cx = mids.reduce((a, m) => a + m[0], 0) / mids.length
       const cy = mids.reduce((a, m) => a + m[1], 0) / mids.length
-      // The visible play area starts right of the scoreboard; its centre is what follows the sticks.
-      const covered = document.querySelector('.scoreboard')!.getBoundingClientRect().right
-      const shift = (covered / 2) * (w / window.innerWidth)
-      return Math.hypot(x + w / 2 + shift - cx, y + h / 2 - cy)
+      return Math.hypot(x + w / 2 - cx, y + h / 2 - cy)
     })
     const box = (await host.locator('.board').boundingBox())!
     await host.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.45)
