@@ -84,13 +84,54 @@ export interface Session {
   readonly myId: string
   readonly isHost: boolean
   send(action: Action): void
+  /** Leave for good, so the game is not offered for resuming. */
+  quit(): void
   destroy(): void
 }
+
+/** A guest's link to the host: connected, trying to get back, or given up. */
+export type NetState = 'online' | 'reconnecting' | 'lost'
 
 export interface SessionEvents {
   onSnapshot(s: Snapshot): void
   onError(message: string): void
-  onDisconnect?(): void
+  onNetState?(state: NetState): void
+}
+
+const HOST_SAVE_KEY = 'stigits-host'
+const GUEST_SAVE_KEY = 'stigits-guest'
+/** A saved game can be resumed or rejoined for this long. */
+const RESUME_MS = 2 * 60 * 60 * 1000
+/** An offline player's turn is ended for them after this long. */
+const OFFLINE_SKIP_MS = 15_000
+/** A dropped guest retries every RETRY_MS, giving up after RETRY_LIMIT tries. */
+const RETRY_MS = 2000
+const RETRY_LIMIT = 30
+
+function readSaved<T extends { at: number }>(key: string): T | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? 'null') as T | null
+    return v && Date.now() - v.at < RESUME_MS ? v : null
+  } catch {
+    return null
+  }
+}
+function writeSaved(key: string, value: object | null): void {
+  try {
+    if (value) localStorage.setItem(key, JSON.stringify({ ...value, at: Date.now() }))
+    else localStorage.removeItem(key)
+  } catch {
+    /* storage unavailable: nothing to resume later */
+  }
+}
+
+/** The online game this device was hosting, if recent enough to pick up again. */
+export const savedHostGame = () => readSaved<{ snapshot: Snapshot; at: number }>(HOST_SAVE_KEY)
+/** The online game this device last joined as a guest, if recent enough to rejoin. */
+export const savedGuestGame = () => readSaved<{ code: string; pid: string; at: number }>(GUEST_SAVE_KEY)
+export const forgetSavedGames = (): void => {
+  writeSaved(HOST_SAVE_KEY, null)
+  writeSaved(GUEST_SAVE_KEY, null)
 }
 
 /**
@@ -106,6 +147,8 @@ export class HostSession implements Session {
   private events: SessionEvents
   private botTimer = 0
   private botClaims = new Map<string, number>()
+  private offlineTimer = 0
+  private closed = false
 
   private constructor(peer: Peer | null, code: string, name: string, color: string, events: SessionEvents) {
     this.peer = peer
@@ -191,6 +234,28 @@ export class HostSession implements Session {
         }
         this.scheduleBotClaims()
       }, delay))
+    }
+  }
+
+  /**
+   * Pick a saved online game back up under its old code, so guests who are
+   * retrying find the host again. Everyone counts as offline until they return.
+   */
+  static async resume(saved: Snapshot, events: SessionEvents): Promise<HostSession> {
+    // The signalling server can take a few seconds to release the old id after a reload.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const peer = await openPeer(PEER_PREFIX + saved.code)
+        const host = saved.players.find((p) => p.id === HOST_ID)!
+        const session = new HostSession(peer, saved.code, host.name, host.color ?? '', events)
+        session.snapshot = structuredClone(saved)
+        for (const p of session.snapshot.players) p.connected = p.id === HOST_ID || isBot(p.id)
+        session.publish()
+        return session
+      } catch (err) {
+        if ((err as { type?: string }).type !== 'unavailable-id' || attempt > 8) throw err
+        await new Promise((r) => setTimeout(r, 1500))
+      }
     }
   }
 
@@ -289,14 +354,39 @@ export class HostSession implements Session {
   }
 
   private publish(): void {
+    if (this.closed) return
     const msg: ToClient = { t: 'snapshot', snapshot: this.snapshot }
     for (const c of this.conns.values()) if (c.open) c.send(msg)
     this.events.onSnapshot(structuredClone(this.snapshot))
     this.scheduleBot()
     this.scheduleBotClaims()
+    this.scheduleOfflineSkip()
+    if (this.peer) writeSaved(HOST_SAVE_KEY, { snapshot: this.snapshot })
+  }
+
+  // Don't let the table wait forever on a player whose connection dropped.
+  private scheduleOfflineSkip(): void {
+    clearTimeout(this.offlineTimer)
+    const g = this.snapshot.game
+    if (!g || g.phase !== 'playing') return
+    const who = g.players[g.current]
+    if (isBot(who.id) || this.snapshot.players.find((p) => p.id === who.id)?.connected !== false) return
+    const turn = `${g.round}:${g.turn}:${g.current}`
+    this.offlineTimer = window.setTimeout(() => {
+      const now = this.snapshot.game
+      if (now && `${now.round}:${now.turn}:${now.current}` === turn) this.handle({ type: 'endTurn', playerId: who.id })
+    }, OFFLINE_SKIP_MS)
+  }
+
+  /** Leave for good: the game is not offered for resuming. */
+  quit(): void {
+    if (this.peer) writeSaved(HOST_SAVE_KEY, null)
+    this.destroy()
   }
 
   destroy(): void {
+    this.closed = true
+    clearTimeout(this.offlineTimer)
     clearTimeout(this.botTimer)
     for (const t of this.botClaims.values()) clearTimeout(t)
     this.peer?.destroy()
@@ -306,50 +396,130 @@ export class HostSession implements Session {
 export class ClientSession implements Session {
   readonly isHost = false
   readonly myId: string
-  private conn: DataConnection
+  private conn: DataConnection | null = null
   private peer: Peer
+  private retries = 0
+  private retryTimer = 0
+  private closed = false
+  private readonly onOnline = () => this.state !== 'online' && this.retry()
+  state: NetState = 'online'
 
-  private constructor(peer: Peer, conn: DataConnection, myId: string) {
+  private code: string
+  private name: string
+  private color: string
+  private events: SessionEvents
+
+  private constructor(peer: Peer, code: string, pid: string, name: string, color: string, events: SessionEvents) {
     this.peer = peer
-    this.conn = conn
-    this.myId = myId
+    this.code = code
+    this.myId = pid
+    this.name = name
+    this.color = color
+    this.events = events
+    peer.on('disconnected', () => !this.closed && peer.reconnect())
+    window.addEventListener('online', this.onOnline)
   }
 
-  static async join(code: string, name: string, color: string, events: SessionEvents): Promise<ClientSession> {
-    // A stable per-tab id lets a reloaded tab reclaim its seat.
-    let pid = sessionStorage.getItem('stigits-pid')
-    if (!pid) {
-      pid = 'p-' + crypto.randomUUID()
-      sessionStorage.setItem('stigits-pid', pid)
-    }
+  static async join(code: string, name: string, color: string, events: SessionEvents, pid?: string): Promise<ClientSession> {
+    code = code.toUpperCase()
+    // A stable id lets a reloaded tab, or a dropped connection, reclaim its seat.
+    pid ??= sessionStorage.getItem('stigits-pid') ?? 'p-' + crypto.randomUUID()
+    sessionStorage.setItem('stigits-pid', pid)
     const peer = await openPeer()
-    const conn = peer.connect(PEER_PREFIX + code.toUpperCase(), { reliable: true })
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Could not reach the host. Check the code.')), 15000)
+    const session = new ClientSession(peer, code, pid, name, color, events)
+    try {
+      await session.connect()
+    } catch (err) {
+      session.destroy()
+      throw err
+    }
+    writeSaved(GUEST_SAVE_KEY, { code, pid })
+    return session
+  }
+
+  private connect(): Promise<void> {
+    const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true })
+    return new Promise<void>((resolve, reject) => {
+      const fail = (err: Error) => {
+        clearTimeout(timer)
+        this.peer.off('error', onError)
+        conn.close()
+        reject(err)
+      }
+      const onError = (err: { type?: string }) =>
+        fail(err.type === 'peer-unavailable' ? new Error(`No game found with code ${this.code}.`) : (err as Error))
+      const timer = setTimeout(() => fail(new Error('Could not reach the host. Check the code.')), 15000)
+      this.peer.once('error', onError)
       conn.once('open', () => {
         clearTimeout(timer)
+        this.peer.off('error', onError)
+        this.conn = conn
+        conn.on('data', (raw) => {
+          const msg = raw as ToClient
+          if (msg.t === 'snapshot') this.events.onSnapshot(msg.snapshot)
+          else this.events.onError(msg.message)
+        })
+        conn.on('close', () => this.conn === conn && this.dropped())
+        conn.send({ t: 'hello', pid: this.myId, name: this.name, color: this.color } satisfies ToHost)
         resolve()
       })
-      peer.once('error', (err) => {
-        clearTimeout(timer)
-        reject(err.type === 'peer-unavailable' ? new Error(`No game found with code ${code}.`) : err)
-      })
     })
-    conn.on('data', (raw) => {
-      const msg = raw as ToClient
-      if (msg.t === 'snapshot') events.onSnapshot(msg.snapshot)
-      else events.onError(msg.message)
-    })
-    conn.on('close', () => events.onDisconnect?.())
-    conn.send({ t: 'hello', pid, name, color } satisfies ToHost)
-    return new ClientSession(peer, conn, pid)
+  }
+
+  private setState(state: NetState): void {
+    this.state = state
+    this.events.onNetState?.(state)
+  }
+
+  // The link to the host broke: keep trying quietly for a while, then give up and let the player choose.
+  private dropped(): void {
+    if (this.closed) return
+    this.conn = null
+    this.retries = 0
+    this.setState('reconnecting')
+    this.scheduleRetry()
+  }
+
+  private scheduleRetry(): void {
+    clearTimeout(this.retryTimer)
+    this.retryTimer = window.setTimeout(async () => {
+      if (this.closed || this.conn) return
+      if (this.peer.destroyed) this.peer = await openPeer().catch(() => this.peer)
+      else if (this.peer.disconnected) this.peer.reconnect()
+      try {
+        await this.connect()
+        this.setState('online')
+      } catch {
+        if (++this.retries >= RETRY_LIMIT) this.setState('lost')
+        else this.scheduleRetry()
+      }
+    }, RETRY_MS)
+  }
+
+  /** Try to get back to the host right away (after giving up, or when the network returns). */
+  retry(): void {
+    if (this.closed || this.conn) return
+    this.retries = 0
+    this.setState('reconnecting')
+    clearTimeout(this.retryTimer)
+    this.retryTimer = 0
+    this.scheduleRetry()
   }
 
   send(action: Action): void {
-    this.conn.send({ t: 'action', action: { ...action, playerId: this.myId } } satisfies ToHost)
+    if (this.conn?.open) this.conn.send({ t: 'action', action: { ...action, playerId: this.myId } } satisfies ToHost)
+  }
+
+  /** Leave for good: the game is not offered for rejoining. */
+  quit(): void {
+    writeSaved(GUEST_SAVE_KEY, null)
+    this.destroy()
   }
 
   destroy(): void {
+    this.closed = true
+    clearTimeout(this.retryTimer)
+    window.removeEventListener('online', this.onOnline)
     this.peer.destroy()
   }
 }

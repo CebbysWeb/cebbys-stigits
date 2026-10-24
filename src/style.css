@@ -482,3 +482,17 @@ button.big { min-height: 56px; font-size: 1.1rem; }
 .menu-icon svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .menu-card .menu-icon { color: var(--accent); }
 .menu-card.primary-card .menu-icon { color: #fff; }
+
+/* Connection trouble: a bar slides down from the top. */
+.net-bar {
+  position: fixed; top: 0; left: 50%; z-index: 30; display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; border-radius: 0 0 14px 14px; background: #0f172a; color: #fff; font-size: 0.88rem; font-weight: 600;
+  transform: translate(-50%, -110%); transition: transform 0.25s; box-shadow: 0 8px 24px rgb(15 23 42 / 0.3); max-width: calc(100% - 24px);
+}
+.net-bar.show { transform: translate(-50%, 0); }
+.net-bar.lost { background: #b91c1c; }
+.net-bar button { min-height: 0; padding: 4px 12px; border-radius: 999px; font-size: 0.82rem; }
+.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgb(255 255 255 / 0.3); border-top-color: #fff; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.resume-card { border-color: var(--accent); }
+.leave-btn { min-height: 36px; padding: 6px 14px; }

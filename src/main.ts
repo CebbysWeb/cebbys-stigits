@@ -2,7 +2,7 @@ import './style.css'
 import { legalTargets } from './engine/geometry'
 import { allMoves, findMatchingMove, matchingCard, PILE_MAX, PILE_MIN, PILE_STEP, winnerNames, type GameState, type Settings } from './engine/game'
 import { guessLang, langPickerHtml, setLang, t, translateError, type Lang } from './i18n'
-import { ClientSession, HostSession, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
+import { ClientSession, forgetSavedGames, HostSession, savedGuestGame, savedHostGame, type NetState, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
 import { PlayedPile } from './ui/pile'
@@ -107,15 +107,37 @@ const events = {
     if (flight) pile.fly(flight.card, flight.from, flight.opacity)
   },
   onError: (message: string) => toast(translateError(message)),
-  onDisconnect() {
-    status = t.lostHost
-    snapshot = null
-    session = null
-    render()
-  },
+  onNetState: paintNet,
 }
 
-async function connect(mode: 'host' | 'join' | 'practice', code?: string): Promise<void> {
+/** A bar across the top while a guest's link to the host is down, with a way out once retrying stops. */
+const netBar = document.createElement('div')
+netBar.className = 'net-bar'
+netBar.setAttribute('role', 'status')
+document.body.append(netBar)
+netBar.addEventListener('click', (e) => {
+  const act = (e.target as Element).closest<HTMLElement>('[data-net]')?.dataset.net
+  if (act === 'retry' && session instanceof ClientSession) session.retry()
+  if (act === 'leave') leaveGame()
+})
+function paintNet(state: NetState = 'online'): void {
+  netBar.className = `net-bar ${state === 'online' ? '' : 'show'} ${state}`
+  netBar.innerHTML = state === 'reconnecting'
+    ? `<span class="spinner"></span>${t.reconnecting}`
+    : state === 'lost' ? `<span>${t.connectionLost}</span><button data-net="retry">${t.retry}</button><button data-net="leave">${t.leave}</button>` : ''
+}
+
+function leaveGame(): void {
+  session?.quit()
+  session = null
+  snapshot = null
+  status = ''
+  helpOpen = false
+  paintNet()
+  render()
+}
+
+async function connect(mode: 'host' | 'join' | 'practice' | 'resume' | 'rejoin', code?: string): Promise<void> {
   const input = document.querySelector<HTMLInputElement>('#name')
   const name = input?.value.trim() || t.namePlaceholder
   profile.name = name
@@ -128,11 +150,16 @@ async function connect(mode: 'host' | 'join' | 'practice', code?: string): Promi
     events.onSnapshot(structuredClone((session as HostSession).snapshot))
     return
   }
-  status = mode === 'host' ? t.opening : t.joining(code!)
+  const savedHost = mode === 'resume' ? savedHostGame() : null
+  const savedGuest = mode === 'rejoin' ? savedGuestGame() : null
+  code ??= savedHost?.snapshot.code ?? savedGuest?.code
+  status = mode === 'host' ? t.opening : mode === 'resume' ? t.resuming(code!) : t.joining(code!)
   render()
   try {
-    session = mode === 'host' ? await HostSession.create(name, color, events) : await ClientSession.join(code!, name, color, events)
-    if (session instanceof HostSession) session.configure(loadSettings())
+    session = mode === 'host' ? await HostSession.create(name, color, events)
+      : savedHost ? await HostSession.resume(savedHost.snapshot, events)
+      : await ClientSession.join(code!, name, color, events, savedGuest?.pid)
+    if (mode === 'host') (session as HostSession).configure(loadSettings())
     status = ''
     if (session instanceof HostSession) events.onSnapshot(structuredClone(session.snapshot))
   } catch (err) {
@@ -186,6 +213,18 @@ function render(): void {
   }
 }
 
+/** Offer to pick up an online game this device was in, if the page was reloaded or closed. */
+function resumeCard(): string {
+  const host = savedHostGame()
+  const guest = host ? null : savedGuestGame()
+  if (!host && !guest) return ''
+  const code = host?.snapshot.code ?? guest!.code
+  return `<div class="join-card resume-card">
+    <span><b>${host ? t.resumeHost(code) : t.rejoin(code)}</b><small>${t.resumeAbout}</small></span>
+    <div class="row"><button class="primary" data-act="${host ? 'resume' : 'rejoin'}">${host ? t.resume : t.join}</button><button class="link" data-act="forget">${t.forget}</button></div>
+  </div>`
+}
+
 function renderHome(): string {
   const code = joinCodeFromUrl()
   const actions = status ? `<p class="status">${esc(status)}</p>` : code
@@ -195,6 +234,7 @@ function renderHome(): string {
         <button class="menu-card primary-card" data-act="host"><span class="menu-icon"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span><b>${t.hostGame}</b><small>${t.hostAbout}</small></button>
         <button class="menu-card" data-act="practice"><span class="menu-icon"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13v1M15 13v1M9 17h6"/></svg></span><b>${t.practice}</b><small>${t.practiceAbout}</small></button>
       </div>
+      ${resumeCard()}
       <div class="join-card">
         <span><b>${t.joinTitle}</b><small>${t.joinAbout}</small></span>
         <div class="row"><input id="code" maxlength="5" placeholder="${t.codePlaceholder}" aria-label="${t.code}"/><button data-act="join-code">${t.join}</button></div>
@@ -285,6 +325,7 @@ function renderLobby(s: Snapshot): string {
     <header class="lobby-head">
       <h1>Stigits</h1>
       ${langPickerHtml()}
+      <button class="leave-btn" data-act="quit">${t.leave}</button>
       ${local ? `<p class="status">${t.offlinePractice}</p>` : `<div class="share">
         <input readonly value="${esc(shareLink(s.code))}" id="share" aria-label="${t.inviteLink}"/>
         <button data-act="copy">${t.copyLink}</button>
@@ -394,6 +435,11 @@ app.addEventListener('click', async (e) => {
     case 'host': return connect('host')
     case 'join': return connect('join', el.dataset.code)
     case 'practice': return connect('practice')
+    case 'resume': return connect('resume')
+    case 'rejoin': return connect('rejoin')
+    case 'forget':
+      forgetSavedGames()
+      return render()
     case 'pile-step': {
       if (!(session instanceof HostSession) || !snapshot) return
       const next = snapshot.settings.pile + Number(el.dataset.step)
@@ -415,12 +461,7 @@ app.addEventListener('click', async (e) => {
       return render()
     case 'quit':
       if (!confirm(session instanceof HostSession && session.snapshot.code !== LOCAL_CODE ? t.quitConfirmAll : t.quitConfirm)) return
-      session?.destroy()
-      session = null
-      snapshot = null
-      status = ''
-      helpOpen = false
-      return render()
+      return leaveGame()
     case 'end-turn': return session!.send({ type: 'endTurn', playerId: session!.myId })
     case 'add-bot': return (session as HostSession).addBot()
     case 'remove': return (session as HostSession).removePlayer(el.dataset.id!)

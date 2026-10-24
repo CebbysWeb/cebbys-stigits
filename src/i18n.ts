@@ -123,6 +123,16 @@ const en = {
   playedCards: 'Played cards',
   nPlayed: (n: number) => `${n} played`,
   dropHere: 'Drop cards<br/>here',
+  reconnecting: 'Connection lost — reconnecting…',
+  connectionLost: 'Could not reach the host.',
+  retry: 'Try again',
+  leave: 'Leave',
+  resuming: (code: string) => `Reopening game ${code}…`,
+  resumeHost: (code: string) => `Resume hosting ${code}`,
+  rejoin: (code: string) => `Rejoin game ${code}`,
+  resumeAbout: 'Pick up where you left off.',
+  resume: 'Resume',
+  forget: 'Dismiss',
   stickHolds: 'That stick holds the pattern together — pick another.',
 }
 
@@ -249,6 +259,16 @@ const lv: Dict = {
   playedCards: 'Izspēlētās kārtis',
   nPlayed: (n) => `Izspēlētas: ${n}`,
   dropHere: 'Nomet kārtis<br/>šeit',
+  reconnecting: 'Savienojums zudis — atjauno…',
+  connectionLost: 'Neizdodas sazināties ar veidotāju.',
+  retry: 'Mēģināt vēlreiz',
+  leave: 'Iziet',
+  resuming: (code) => `Atver spēli ${code} no jauna…`,
+  resumeHost: (code) => `Turpināt spēli ${code}`,
+  rejoin: (code) => `Atgriezties spēlē ${code}`,
+  resumeAbout: 'Turpini, kur palika.',
+  resume: 'Turpināt',
+  forget: 'Aizmirst',
   stickHolds: 'Šis sērkociņš satur figūru kopā — izvēlies citu.',
 }
 
@@ -380,6 +400,16 @@ const ru: Dict = {
   playedCards: 'Сыгранные',
   nPlayed: (n) => `Сыграно: ${n}`,
   dropHere: 'Брось карту<br/>сюда',
+  reconnecting: 'Связь потеряна — переподключаемся…',
+  connectionLost: 'Не удаётся связаться с хостом.',
+  retry: 'Повторить',
+  leave: 'Выйти',
+  resuming: (code) => `Открываем игру ${code} снова…`,
+  resumeHost: (code) => `Продолжить игру ${code}`,
+  rejoin: (code) => `Вернуться в игру ${code}`,
+  resumeAbout: 'Продолжи с того же места.',
+  resume: 'Продолжить',
+  forget: 'Скрыть',
   stickHolds: 'Эта спичка держит фигуру целой — выбери другую.',
 }
 
@@ -394,6 +424,7 @@ const ERRORS: Record<string, Record<Lang, string>> = {
   'That card is not in your hand': { en: 'That card is not in your hand', lv: 'Šīs kārts tev nav rokā', ru: 'Этой карты нет у тебя в руке' },
   'Too late — the pattern just changed': { en: 'Too late — the pattern just changed', lv: 'Par vēlu — figūra tikko mainījās', ru: 'Поздно — фигура только что изменилась' },
   'This game has already started.': { en: 'This game has already started.', lv: 'Šī spēle jau ir sākusies.', ru: 'Эта игра уже началась.' },
+  'This game is full (12 players).': { en: 'This game is full (12 players).', lv: 'Spēle ir pilna (12 spēlētāji).', ru: 'Игра заполнена (12 игроков).' },
   'Could not reach the host. Check the code.': { en: 'Could not reach the host. Check the code.', lv: 'Neizdevās sazināties ar veidotāju. Pārbaudi kodu.', ru: 'Не удалось связаться с хостом. Проверь код.' },
 }
 
