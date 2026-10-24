@@ -100,7 +100,8 @@ describe('table settings', () => {
       for (const q of s.players) expect(new Set(q.hand).size).toBe(q.hand.length)
     }
     expect(s.pileLeft).toBe(0)
-    expect(drawn).toBe(120)
+    // Every card is played: both starting hands plus the whole pile.
+    expect(drawn).toBe(10 + 120)
   })
   it('uses the chosen wrong-call penalty', () => {
     for (const penalty of [0, 2]) {
@@ -201,7 +202,9 @@ describe('turns', () => {
     const s = moveTo(newGame(players, { rounds: 1, seed: 5 }))
     expect(s.current).toBe(0)
     expect(s.movesLeft).toBe(0)
-    expect(() => moveTo(s)).toThrow(/end your turn/)
+    // Any stick but the one just placed (which may be placed again to fix a slip).
+    const other = allMoves(s).find((m) => m.index !== s.adjust!.index)!
+    expect(() => applyAction(s, { type: 'move', playerId: s.players[0].id, ...other })).toThrow(/end your turn/)
     const next = end(s)
     expect(next.current).toBe(1)
     expect(next.movesLeft).toBe(1)
@@ -259,13 +262,41 @@ describe('turns', () => {
     expect(s.phase).toBe('playing')
   })
 
-  it('ends the game when the pile runs out', () => {
+  it('stops refilling once the pile runs out, but play goes on', () => {
     let s = moveTo(newGame(players, { rounds: 1, seed: 5 }))
     s.pileLeft = 2
     s.players[0].hand = s.players[0].hand.slice(0, 2)
     s = end(s)
-    expect(s.phase).toBe('gameOver')
+    expect(s.phase).toBe('playing')
+    expect(s.pileLeft).toBe(0)
     expect(s.players[0].hand.length).toBe(4)
+    expect(s.current).toBe(1)
+  })
+
+  it('a player who plays out their hand is out: their turn ends and they are skipped', () => {
+    let s = newGame([...players, { id: 'c', name: 'Cy' }], { rounds: 1, seed: 5 })
+    s.pileLeft = 0
+    // Ann holds just the card on the grid; playing it empties her hand on her own turn.
+    const card = SHAPE_CANON.indexOf(canonical(s.pattern))
+    s.players[0].hand = [card]
+    s = claim(s, s.players[0].id, card)
+    expect(s.phase).toBe('playing')
+    expect(s.current).toBe(1)
+    // Bob ends his turn; Cy is next, and after Cy the turn skips Ann.
+    s = end(s)
+    expect(s.current).toBe(2)
+    s = end(s)
+    expect(s.current).toBe(1)
+  })
+
+  it('ends the game when every hand is played out', () => {
+    let s = newGame(players, { rounds: 1, seed: 5 })
+    s.pileLeft = 0
+    s.players[1].hand = []
+    const card = SHAPE_CANON.indexOf(canonical(s.pattern))
+    s.players[0].hand = [card]
+    s = claim(s, s.players[0].id, card)
+    expect(s.phase).toBe('gameOver')
   })
 })
 
@@ -364,5 +395,45 @@ describe('full games', () => {
     const four = [...players, { id: 'c', name: 'Cid' }, { id: 'd', name: 'Dee' }]
     const end = play(newGame(four, { rounds: 2, seed: 11 }))
     expect(end.phase).toBe('gameOver')
+  })
+})
+
+describe('fixing a slipped drop', () => {
+  const start = () => newGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], { rounds: 1, seed: 5 })
+  const moveStick = (s: GameState, index: number, to: Stick) => applyAction(s, { type: 'move', playerId: 'a', index, to })
+
+  it('lets the mover place the same stick again without spending a move', () => {
+    const s = moveTo(start())
+    const index = s.adjust!.index
+    const elsewhere = legalTargets(s.pattern, index).find((t) => !(t.x === s.adjust!.from.x && t.y === s.adjust!.from.y && t.d === s.adjust!.from.d))!
+    const again = moveStick(s, index, elsewhere)
+    expect(again.movesLeft).toBe(0)
+    expect(again.pattern[index]).toEqual(elsewhere)
+    expect(again.lastMove!.from).toEqual(s.adjust!.from)
+    // Any other stick still needs a move.
+    const other = (index + 1) % s.pattern.length
+    const t = legalTargets(again.pattern, other)[0]
+    if (t) expect(() => moveStick(again, other, t)).toThrow(/move again/)
+  })
+
+  it('putting the stick back undoes the move', () => {
+    const s0 = start()
+    const s = moveTo(s0)
+    const back = moveStick(s, s.adjust!.index, s.adjust!.from)
+    expect(back.pattern).toEqual(s0.pattern)
+    expect(back.movesLeft).toBe(1)
+    expect(back.turnMoved).toBe(false)
+    expect(back.adjust).toBeNull()
+  })
+
+  it('a matched card or the end of the turn sets the stick', () => {
+    let s = start()
+    const card = s.players[1].hand[0]
+    s = moveTo(s, card)
+    if (matchFor(s, 1) !== undefined) {
+      expect(claim(s, 'b', matchFor(s, 1)!).adjust).toBeNull()
+    }
+    const ended = applyAction(moveTo(start()), { type: 'endTurn', playerId: 'a' })
+    expect(ended.adjust).toBeNull()
   })
 })

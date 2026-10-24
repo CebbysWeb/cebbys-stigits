@@ -28,12 +28,14 @@ export interface Settings {
   /** Show the green spots a picked-up stick can go to. */
   hints: boolean
   botSpeed: 'relaxed' | 'normal' | 'quick'
-  /** Minutes each player has per turn; 0 means no limit. */
-  turnLimit: 0 | 1 | 2 | 5
+  /** Seconds each player has per turn; 0 means no limit. */
+  turnLimit: 0 | 30 | 60 | 120 | 180 | 300
+  /** Everyone's cards are shown face up to the whole table. */
+  showCards: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal', turnLimit: 0,
+  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal', turnLimit: 0, showCards: false,
 }
 
 export const PILE_MIN = 10
@@ -86,6 +88,12 @@ export interface GameState {
   turnMoved: boolean
   phase: 'playing' | 'roundOver' | 'gameOver'
   lastMove: { from: Stick; to: Stick } | null
+  /**
+   * The stick the current player just placed, which they may still pick up and
+   * place again for free (a slipped drop is not punished), with what to restore
+   * if they put it back where it came from. Cleared once a card matches or the turn ends.
+   */
+  adjust?: { index: number; from: Stick; movesLeft: number; turnMoved: boolean; lastMove: { from: Stick; to: Stick } | null } | null
   /** Counts moves; a claim names the move it saw so a stale claim is not penalised. */
   moveCount: number
   /** The most recent claim, for UI feedback. */
@@ -169,6 +177,7 @@ function startRound(state: GameState): void {
   state.turn = 1
   state.phase = 'playing'
   state.lastMove = null
+  state.adjust = null
   state.lastPlayed = []
   state.played = []
   state.log.push(`Round ${state.round} begins. ${state.players[state.current].name} starts.`)
@@ -199,7 +208,8 @@ export function applyAction(prev: GameState, action: Action): GameState {
 function move(state: GameState, action: Extract<Action, { type: 'move' }>): void {
   const me = state.players[state.current]
   if (me.id !== action.playerId) throw new Error(`It is ${me.name}'s turn`)
-  if (state.movesLeft < 1) throw new Error('Play a matching card to move again, or end your turn')
+  const adjusting = state.adjust?.index === action.index
+  if (state.movesLeft < 1 && !adjusting) throw new Error('Play a matching card to move again, or end your turn')
   if (!Number.isInteger(action.index) || action.index < 0 || action.index >= state.pattern.length)
     throw new Error('No such stick')
   const to = action.to
@@ -208,9 +218,24 @@ function move(state: GameState, action: Extract<Action, { type: 'move' }>): void
 
   const from = state.pattern[action.index]
   state.pattern[action.index] = { x: to.x, y: to.y, d: to.d }
-  state.lastMove = { from, to: state.pattern[action.index] }
   state.lastPlayed = []
   state.moveCount += 1
+  const a = state.adjust
+  if (a && adjusting) {
+    if (sameStick(to, a.from)) {
+      // Back where it started: as if it never moved.
+      state.movesLeft = a.movesLeft
+      state.turnMoved = a.turnMoved
+      state.lastMove = a.lastMove
+      state.adjust = null
+    } else {
+      // Placed again: still the same single move.
+      state.lastMove = { from: a.from, to: state.pattern[action.index] }
+    }
+    return
+  }
+  state.adjust = { index: action.index, from, movesLeft: state.movesLeft, turnMoved: state.turnMoved, lastMove: state.lastMove }
+  state.lastMove = { from, to: state.pattern[action.index] }
   state.movesLeft -= 1
   state.turnMoved = true
 }
@@ -228,12 +253,14 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
       if (state.pileLeft > 0) state.pileLeft -= 1
     }
   }
-  if (state.pileLeft === 0) {
-    state.log.push('The pile is empty.')
+  if (allOut(state)) {
+    state.log.push('Every card has been played.')
     endRound(state)
     return
   }
-  state.current = (state.current + 1) % n
+  // Players who have played out their hand sit out the rest of the game.
+  do state.current = (state.current + 1) % n
+  while (isOut(state, state.players[state.current]))
   state.turn += 1
   // Rounds mode: a round is one turn for every player; the board carries on.
   if (state.settings.mode === 'rounds' && state.turn > n) {
@@ -248,8 +275,26 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
   }
   state.movesLeft = 1
   state.turnMoved = false
+  state.adjust = null
   state.lastPlayed = []
   state.log.push(`${state.players[state.current].name}'s turn.`)
+}
+
+/** Empty Deck: with the pile gone, a player with no cards left is out of the game. */
+const isOut = (state: GameState, p: Player): boolean =>
+  state.settings.mode === 'emptyDeck' && state.pileLeft === 0 && p.hand.length === 0
+
+/** Empty Deck ends once the pile is gone and every hand has been played out. */
+const allOut = (state: GameState): boolean => state.players.every((p) => isOut(state, p))
+
+// A player whose last card just left their hand is out: the game ends if everyone
+// is, and otherwise a player out on their own turn hands the turn on.
+function afterClaim(state: GameState, i: number): void {
+  const p = state.players[i]
+  if (!isOut(state, p)) return
+  state.log.push(`${p.name} has played all their cards.`)
+  if (allOut(state)) endRound(state)
+  else if (i === state.current) endTurn(state, { type: 'endTurn', playerId: p.id })
 }
 
 // Any player may play a card at any time. A match scores +1; a wrong call costs 1
@@ -279,6 +324,7 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
       p.score -= cost
       state.log.push(`${p.name} played a card that does not match${cost ? ` (−${cost})` : ''}.`)
     }
+    afterClaim(state, i)
     return
   }
   p.hand.splice(h, 1)
@@ -287,9 +333,12 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
   state.lastPlayed.push({ player: i, card: action.card })
   state.played.push({ player: i, card: action.card })
   state.log.push(`${p.name} matched a card (+1).`)
+  // Someone used this shape, so the stick that made it is now set.
+  state.adjust = null
 
   // The player whose turn it is earns another move with each match.
   if (i === state.current) state.movesLeft = 1
+  afterClaim(state, i)
 }
 
 function endRound(state: GameState): void {

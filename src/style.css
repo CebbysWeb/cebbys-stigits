@@ -508,3 +508,64 @@ button.big { min-height: 56px; font-size: 1.1rem; }
 .sound-btn .cross, .sound-btn.off .waves { display: none; }
 .sound-btn.off .cross { display: inline; }
 .sound-btn.off { color: var(--muted); }
+
+/* Pickup pile count, as a badge on the stack; and players who have finished. */
+.draw-count {
+  position: absolute; top: -8px; right: -8px; z-index: 2; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 999px;
+  display: grid; place-items: center; background: #0f172a; color: #fff; font-weight: 800; font-size: 0.9rem; font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.25);
+}
+.draw-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+.draw-pile.compact .draw-empty { font-size: 0.65rem; }
+.done-badge { font-size: 0.7rem; font-weight: 700; color: #15803d; background: rgb(34 197 94 / 0.15); border-radius: 999px; padding: 1px 7px; }
+.seat.out .seat-label { opacity: 0.7; }
+/* Keep the count crisp while the stack itself stays faint. */
+.draw-pile { opacity: 1; }
+.draw-pile .draw-card, .draw-pile .pile-count { opacity: 0.45; }
+
+/* Chat: a toggle in the bottom-right corner, its panel above it, and incoming messages rising as bubbles. */
+.chat-btn { left: auto; top: auto; right: 16px; bottom: 16px; width: 48px; height: 48px; display: grid; place-items: center; }
+.chat .chat-btn[aria-expanded="true"] { background: var(--accent); color: #fff; }
+.chat-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.chat-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 0.68rem; font-weight: 800; display: grid; place-items: center; }
+.chat-flyouts { position: fixed; right: 16px; bottom: 74px; z-index: 7; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; cursor: pointer; }
+.chat-flyout {
+  max-width: min(280px, calc(100vw - 32px)); padding: 8px 12px; border-radius: 16px 16px 4px 16px;
+  background: var(--panel); border: 1px solid var(--line); border-right: 3px solid var(--who); box-shadow: var(--shadow);
+  font-size: 0.85rem; line-height: 1.35; overflow-wrap: anywhere; animation: chat-fly 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  transition: opacity 0.4s, transform 0.4s;
+}
+.chat-flyout b { color: var(--who); }
+.chat-flyout.leaving { opacity: 0; transform: translateY(-12px); }
+@keyframes chat-fly { from { opacity: 0; transform: translate(24px, 48px) scale(0.8); } }
+.chat-panel {
+  position: fixed; right: 16px; bottom: 74px; z-index: 8; width: min(320px, calc(100vw - 32px)); max-height: min(420px, 60dvh);
+  display: flex; flex-direction: column; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 16px 40px rgb(15 23 42 / 0.18);
+  transform-origin: bottom right; animation: chat-open 0.2s ease-out;
+}
+@keyframes chat-open { from { opacity: 0; transform: scale(0.9) translateY(10px); } }
+.chat-panel[hidden], .chat-badge[hidden], .chat[hidden] { display: none; }
+.chat-panel header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px 14px; }
+.chat-panel .help-close { position: static; }
+.chat-list { flex: 1; overflow-y: auto; padding: 4px 14px; display: flex; flex-direction: column; gap: 6px; min-height: 80px; }
+.chat-msg { margin: 0; font-size: 0.88rem; line-height: 1.35; overflow-wrap: anywhere; }
+.chat-msg.mine { color: var(--muted); }
+.chat-empty { margin: auto; color: var(--muted); font-size: 0.85rem; }
+.chat-form { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--line); }
+.chat-form input { flex: 1; min-width: 0; min-height: 38px; padding: 6px 12px; }
+.chat-form button { min-height: 38px; padding: 6px 14px; }
+/* In the lobby, sit above the Start button. */
+.lobby-open .chat-btn { bottom: 84px; }
+.lobby-open .chat-panel, .lobby-open .chat-flyouts { bottom: 142px; }
+
+/* Last-seconds warning: a big number pops over the board and fades. */
+.countdown {
+  position: fixed; left: 50%; top: 42%; z-index: 9; pointer-events: none; font-size: 6rem; font-weight: 800; line-height: 1;
+  color: var(--accent); text-shadow: 0 6px 24px rgb(249 115 22 / 0.35); animation: countdown 1s ease-out forwards;
+}
+.countdown.urgent { color: #dc2626; text-shadow: 0 6px 24px rgb(220 38 38 / 0.35); }
+@keyframes countdown {
+  from { opacity: 0.95; transform: translate(-50%, -50%) scale(0.6); }
+  25% { opacity: 0.9; transform: translate(-50%, -50%) scale(1.05); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(1.25); }
+}

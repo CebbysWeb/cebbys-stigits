@@ -48,7 +48,12 @@ export function loadProfile(): Profile {
 export const saveProfile = (p: Profile): void => write(PROFILE_KEY, p)
 
 export function loadSettings(): Settings {
-  return { ...DEFAULT_SETTINGS, ...read<Settings>(SETTINGS_KEY) }
+  const s = { ...DEFAULT_SETTINGS, ...read<Settings>(SETTINGS_KEY) }
+  // The turn limit used to be saved in minutes (1, 2 or 5).
+  if (s.turnLimit > 0 && s.turnLimit <= 5) s.turnLimit = (s.turnLimit * 60) as Settings['turnLimit']
+  // 15 seconds is no longer offered; the shortest limit is 30.
+  else if (s.turnLimit > 0 && s.turnLimit < 30) s.turnLimit = 30
+  return s
 }
 
 export const saveSettings = (s: Settings): void => write(SETTINGS_KEY, s)

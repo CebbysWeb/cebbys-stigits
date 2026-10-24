@@ -2,7 +2,8 @@ import './style.css'
 import { legalTargets } from './engine/geometry'
 import { allMoves, findMatchingMove, matchingCard, PILE_MAX, PILE_MIN, PILE_STEP, winnerNames, type GameState, type Settings } from './engine/game'
 import { guessLang, langPickerHtml, setLang, t, translateError, type Lang } from './i18n'
-import { playMove, playMyTurn, setSoundOn } from './ui/sfx'
+import { playChat, playMove, playMyTurn, playTick, setSoundOn } from './ui/sfx'
+import { ChatView } from './ui/chat'
 import { ClientSession, forgetSavedGames, HostSession, savedGuestGame, savedHostGame, type NetState, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
@@ -21,7 +22,14 @@ const pile = new PlayedPile()
 /** The face-down pile players refill from; it sits left of the shape, the played pile right of it. */
 const drawPile = document.createElement('div')
 drawPile.className = 'draw-pile'
-const paintDrawPile = () => { drawPile.innerHTML = `<div class="draw-card"></div><div class="draw-card"></div><div class="draw-card"></div><span class="pile-count">${t.pickupPile}</span>` }
+/** Redraw the pickup pile: its card count in Empty Deck (unlimited in Rounds), or an empty spot. */
+function paintDrawPile(left = -1): void {
+  const html = `<div class="draw-card"></div><div class="draw-card"></div><div class="draw-card"></div>${
+    left > 0 ? `<span class="draw-count" title="${t.cardsInPile}">${left}</span>` : ''}${
+    left === 0 ? `<span class="draw-empty">${t.pileEmpty}</span>` : ''}<span class="pile-count">${t.pickupPile}</span>`
+  if (drawPile.innerHTML !== html) drawPile.innerHTML = html
+  drawPile.classList.toggle('empty', left === 0)
+}
 paintDrawPile()
 const hand = new HandView({ interactive: true, minCard: 76, maxCard: 140, onPlay: playCard, dropTarget: () => pile.el })
 
@@ -91,6 +99,7 @@ const events = {
       !!g && g.phase === 'playing' && g.players[g.current]?.id === session?.myId
     if (myTurnNow(next) && (!myTurnNow(prev) || prev!.round !== next!.round)) playMyTurn()
     snapshot = s
+    chat.update(session instanceof HostSession && session.isLocal ? null : s.chat ?? [], session?.myId ?? '')
     // The deadline is on the host's clock; keep only the time left, measured on ours.
     turnEndsAt = s.deadline ? Date.now() + (s.deadline - (s.sentAt ?? s.deadline)) : null
     const c = s.game?.lastClaim
@@ -108,7 +117,7 @@ const events = {
       if (mine && !c.ok) hand.flash(c.card, 'wrong')
       // Two players may hold the same shape, so look only in the claimer's hand.
       const fanOf = mine ? hand.el : document.querySelector(`.seat-fan[data-seat="${CSS.escape(who.id)}"]`)
-      const el = c.ok ? fanOf?.querySelector<HTMLElement>(`.hand-card[data-card="${c.card}"]`) ?? null : null
+      const el = c.ok ? fanOf?.querySelector<HTMLElement>(`.hand-card:not(.leaving)[data-card="${c.card}"]`) ?? null : null
       if (el) {
         const fan = el.closest<HTMLElement>('.fan')
         flight = { card: c.card, from: el.getBoundingClientRect(), opacity: fan ? Number(getComputedStyle(fan).opacity) : 1 }
@@ -124,6 +133,9 @@ const events = {
   onError: (message: string) => toast(translateError(message)),
   onNetState: paintNet,
 }
+
+/** Table chat, for online games only. */
+const chat = new ChatView((text) => session?.say(text), playChat)
 
 /** A bar across the top while a guest's link to the host is down, with a way out once retrying stops. */
 const netBar = document.createElement('div')
@@ -144,6 +156,7 @@ function paintNet(state: NetState = 'online'): void {
 
 function leaveGame(): void {
   session?.quit()
+  chat.update(null, '')
   session = null
   snapshot = null
   status = ''
@@ -185,6 +198,7 @@ async function connect(mode: 'host' | 'join' | 'practice' | 'resume' | 'rejoin',
 }
 
 function render(): void {
+  document.body.classList.toggle('lobby-open', !!session && !!snapshot && !snapshot.game)
   if (!session || !snapshot) {
     app.innerHTML = renderHome()
     const home = app.querySelector<HTMLElement>('.home')
@@ -204,7 +218,7 @@ function render(): void {
     }
     app.querySelector('#pile-slot')?.replaceWith(pile.el)
     app.querySelector('#draw-slot')?.replaceWith(drawPile)
-    drawPile.classList.toggle('empty', g.pileLeft === 0)
+    paintDrawPile(g.pileLeft)
     // The first frame was framed before the play area existed; reframe now that it is laid out.
     if (camFresh) {
       camFresh = false
@@ -222,6 +236,7 @@ function render(): void {
       const side = holder.closest('.seat-left, .seat-right')
       holder.style.setProperty('--back', p.color ?? '')
       if (side) holder.style.width = `${Math.min(320, (side as HTMLElement).clientHeight - 8)}px`
+      view.setFaceDown(!g.settings.showCards)
       holder.append(view.el)
       view.update(p.hand)
     }
@@ -334,7 +349,8 @@ function renderLobby(s: Snapshot): string {
     ${rounds ? row(t.wrongGuess, t.wrongGuessPoints, select('penalty', [[0, t.nothing], [1, t.points(1)], [2, t.points(2)]]))
       : missPicker}
     ${row(t.moveHints, t.moveHintsAbout, toggle('hints'))}
-    ${row(t.turnLimit, t.turnLimitAbout, select('turnLimit', [[0, t.noLimit], [1, t.minutes(1)], [2, t.minutes(2)], [5, t.minutes(5)]]))}
+    ${row(t.showCards, t.showCardsAbout, toggle('showCards'))}
+    ${row(t.turnLimit, t.turnLimitAbout, select('turnLimit', [[0, t.noLimit], [30, t.seconds(30)], [60, t.minutes(1)], [120, t.minutes(2)], [180, t.minutes(3)], [300, t.minutes(5)]]))}
     ${row(t.botSpeed, t.botSpeedAbout, select('botSpeed', [['relaxed', t.relaxed], ['normal', t.normal], ['quick', t.quick]]))}`
 
   return `<main class="lobby">
@@ -373,7 +389,7 @@ function renderGame(s: Snapshot, g: GameState): string {
   const myTurn = g.phase === 'playing' && g.current === me
   const targets = myTurn && selected !== null ? legalTargets(g.pattern, selected) : []
   const turnText = g.phase !== 'playing' ? t.roundOver
-    : myTurn ? (g.movesLeft < 1 ? t.playToMove : selected !== null ? t.dropOnSpot : g.turnMoved ? t.matchMoveAgain : t.yourTurn)
+    : myTurn ? (g.movesLeft < 1 ? (selected !== null ? t.dropOnSpot : g.adjust ? t.adjustHint : t.playToMove) : selected !== null ? t.dropOnSpot : g.turnMoved ? t.matchMoveAgain : t.yourTurn)
     : t.isMoving(esc(g.players[g.current].name))
 
   // Seats follow turn order clockwise from me: the next player sits on my left.
@@ -381,15 +397,18 @@ function renderGame(s: Snapshot, g: GameState): string {
     const p = g.players[i]
     const online = s.players.find((x) => x.id === p.id)?.connected !== false
     const pos = i === me ? 'bottom' : seatSides(g.players.length - 1)[(i - me + g.players.length) % g.players.length - 1]
-    return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
+    // Empty Deck: with the pile gone, a player without cards has finished.
+    const out = g.settings.mode === 'emptyDeck' && g.pileLeft === 0 && p.hand.length === 0
+    return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''} ${out ? 'out' : ''}">
       <div class="seat-label" style="--who: ${esc(p.color ?? 'var(--accent)')}">
         <b>${esc(p.name)}${i === me ? ` (${t.you})` : ''}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
         <span class="pts">${t.points(p.score)}</span>
+        ${out ? `<span class="done-badge">${t.done}</span>` : ''}
         ${i === g.current ? `<span class="turn-badge">${t.turn(g.turn)}</span>` : ''}
       </div>
       ${i === me && myTurn ? `<button class="primary end-turn ${g.turnMoved ? 'blink' : ''}" data-act="end-turn">${t.endTurn}</button>` : ''}
       ${i === me
-        ? (p.hand.length ? '<div id="hand-slot"></div>' : `<p class="hint">${t.noCards}</p>`)
+        ? (p.hand.length ? '<div id="hand-slot"></div>' : `<p class="hint">${g.settings.mode === 'emptyDeck' && g.pileLeft === 0 ? t.allPlayed : t.noCards}</p>`)
         : `<div class="seat-fan" data-seat="${esc(p.id)}"></div>`}
     </div>`
   }
@@ -406,7 +425,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       <div class="play-area"></div>
       <div class="table">
         <p class="turn ${myTurn ? 'mine' : ''}">${turnText}${turnEndsAt && g.phase === 'playing' ? ` <span class="turn-timer" title="${t.timeLeft}">${clock()}</span>` : ''}${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
-        ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn, hints: g.settings.hints }, camViewBox(g))}
+        ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn, hints: g.settings.hints, movable: (i) => canMove(g, i) }, camViewBox(g))}
       </div>
       ${seat(me)}
       <div id="pile-slot"></div>
@@ -467,7 +486,8 @@ app.addEventListener('click', async (e) => {
       profile.lang = el.dataset.lang as Lang
       saveProfile(profile)
       setLang(profile.lang)
-      paintDrawPile()
+      paintDrawPile(snapshot?.game?.pileLeft)
+      chat.relabel()
       pile.update(snapshot?.game?.played.map((p) => p.card) ?? [])
       return render()
     case 'sound':
@@ -627,13 +647,41 @@ function clock(): string {
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
 }
 
+/** Seconds left at which the player on turn is warned, with a tick and a big number. */
+const WARN_AT = [20, 10, 5, 4, 3, 2, 1]
+let warned = Infinity
+
 // Update the countdown in place, so the board isn't rebuilt every second.
 function tickTimer(): void {
   const el = app.querySelector<HTMLElement>('.turn-timer')
-  if (!el || !turnEndsAt) return
+  if (!el || !turnEndsAt) {
+    warned = Infinity
+    return
+  }
   const text = clock()
   if (el.textContent !== text) el.textContent = text
-  el.classList.toggle('low', turnEndsAt - Date.now() < 10_000)
+  const left = Math.ceil((turnEndsAt - Date.now()) / 1000)
+  el.classList.toggle('low', left <= 10)
+  // A new turn starts the warnings afresh; otherwise warn once per mark as it passes.
+  if (left > warned) warned = Infinity
+  const mark = WARN_AT.find((s) => s === left && s < warned)
+  if (mark === undefined) return
+  warned = mark
+  if (isMyTurn()) {
+    playTick(mark <= 5)
+    flashCountdown(mark)
+  }
+}
+
+/** A big number that pops up over the board and fades away. */
+function flashCountdown(seconds: number): void {
+  const el = document.createElement('div')
+  el.className = `countdown ${seconds <= 5 ? 'urgent' : ''}`
+  el.textContent = String(seconds)
+  el.setAttribute('aria-hidden', 'true')
+  document.body.append(el)
+  el.addEventListener('animationend', () => el.remove(), { once: true })
+  setTimeout(() => el.remove(), 1500)
 }
 
 function frame(now: number): void {
@@ -697,11 +745,15 @@ function isMyTurn(): boolean {
   return !!g && !!session && g.phase === 'playing' && g.players[g.current].id === session.myId
 }
 
+/** A stick can be picked up with a move to spend, or if it is the one just placed (to fix a slipped drop). */
+const canMove = (g: GameState, i: number): boolean => g.movesLeft > 0 || g.adjust?.index === i
+
 app.addEventListener('pointerdown', (e) => {
   const hit = (e.target as Element).closest<SVGElement>('.hit[data-stick]')
   const g = snapshot?.game
   if (!hit || !g || !isMyTurn() || drag || e.button !== 0) return
   const index = Number(hit.dataset.stick)
+  if (!canMove(g, index)) return
   const targets = legalTargets(g.pattern, index)
   if (!targets.length) {
     toast(t.stickHolds)
@@ -804,6 +856,7 @@ declare global {
       snapshot: () => Snapshot | null
       myId: () => string | null
       handOrder: () => number[]
+      ghost: (i: number) => Stick | null
       autoMove: () => boolean
       autoClaim: () => boolean
       matches: (card: number) => boolean
@@ -827,6 +880,7 @@ window.__stigits = {
     return true
   },
   handOrder: () => hand.cardOrder,
+  ghost: (i: number) => drag?.targets[i] ?? null,
   autoMove: () => {
     const g = snapshot?.game
     if (!g || !session || g.phase !== 'playing' || g.players[g.current].id !== session.myId) return false

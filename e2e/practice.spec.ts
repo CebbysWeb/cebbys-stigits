@@ -41,7 +41,7 @@ test('offline practice against three bots, seated around the table', async ({ br
   const start = await me()
   await playCardByDrag(page, wrong.card)
   await expect(page.locator('.toast')).toContainText('Not a match')
-  await expect(page.locator(`.seat.me .hand-card[data-card="${wrong.card}"].wrong`)).toHaveCount(1)
+  await expect(page.locator(`.seat.me .hand-card:not(.leaving)[data-card="${wrong.card}"].wrong`)).toHaveCount(1)
   await expect.poll(async () => (await me()).score).toBe(start.score - 1)
   expect((await me()).hand).toContain(wrong.card)
 
@@ -93,7 +93,7 @@ test('drags never get stuck when the screen redraws mid-drag', async ({ browser 
     // The bot moves while I hold a card: the redraw must not leave the card stuck.
     const order = await page.evaluate(() => window.__stigits!.handOrder())
     if (order.length > 1) {
-      const box = (await page.locator(`.seat.me .hand-card[data-card="${order[0]}"]`).boundingBox())!
+      const box = (await page.locator(`.seat.me .hand-card:not(.leaving)[data-card="${order[0]}"]`).boundingBox())!
       const botMove = await lastMove()
       await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2)
       await page.mouse.down()
@@ -120,7 +120,7 @@ test('cards are square and a held card turns with R / E and mirrors with F', asy
   await page.click('[data-act=practice]')
   await page.click('[data-act=start]')
   const card = (await page.evaluate(() => window.__stigits!.handOrder()))[0]
-  const el = page.locator(`.seat.me .hand-card[data-card="${card}"]`)
+  const el = page.locator(`.seat.me .hand-card:not(.leaving)[data-card="${card}"]`)
   await page.waitForTimeout(700) // let the deal animation settle
   const box = (await el.boundingBox())!
   const size = await el.evaluate((e) => [e.offsetWidth, e.offsetHeight])
@@ -199,14 +199,56 @@ test('a turn time limit counts down and ends the turn when it runs out', async (
   await page.clock.install()
   await page.goto(BASE)
   await page.click('[data-act=practice]')
-  await page.selectOption('[data-setting=turnLimit]', '1')
+  await page.selectOption('[data-setting=turnLimit]', '60')
   await page.click('[data-act=start]')
   await expect(page.locator('.turn-timer')).toHaveText(/^(1:00|0:59)$/)
   await page.clock.fastForward(30_000)
   await expect(page.locator('.turn-timer')).toHaveText(/^0:(29|30)$/)
-  await page.clock.fastForward(25_000)
+  await page.clock.fastForward(10_000)
+  // The 20-second warning pops up a big number.
+  await expect(page.locator('.countdown')).toHaveText('20')
+  await page.clock.fastForward(15_000)
   await expect(page.locator('.turn-timer.low')).toBeVisible()
   // Out of time: the turn passes to the bot without me ending it.
   await page.clock.fastForward(6_000)
   await expect.poll(() => page.evaluate(() => window.__stigits!.snapshot()!.game!.current)).toBe(1)
+})
+
+test('a placed stick can be moved again or put back, and open hands show faces', async ({ browser }) => {
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage()
+  await page.goto(BASE)
+  await page.click('[data-act=practice]')
+  await page.click('.setting:has([data-setting=showCards])')
+  await page.click('[data-act=start]')
+  await expect(page.locator('.seat-fan .card-shape').first()).toBeVisible()
+  await expect(page.locator('.seat-fan .card-back')).toHaveCount(0)
+
+  const game = () => page.evaluate(() => window.__stigits!.snapshot()!.game!)
+  const before = (await game()).pattern
+  await dragStick(page)
+  const moved = await game()
+  expect(moved.movesLeft).toBe(0)
+  // Only the placed stick can be picked up now.
+  await expect(page.locator('.hit[data-stick]')).toHaveCount(1)
+  await expect(page.locator('.turn')).toContainText('Not where you meant')
+
+  // Drag it onto the ghost at its original spot: the move is undone.
+  const index = moved.adjust!.index
+  const from = moved.adjust!.from
+  const hit = page.locator(`.hit[data-stick="${index}"]`)
+  const box = (await hit.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  const ghosts = await page.locator('.ghost').count()
+  let target = -1
+  for (let i = 0; i < ghosts; i++) {
+    const t = await page.evaluate((i) => window.__stigits!.ghost(i), i)
+    if (t && t.x === from.x && t.y === from.y && t.d === from.d) target = i
+  }
+  expect(target).toBeGreaterThanOrEqual(0)
+  const g = (await page.locator(`.ghost[data-ghost="${target}"]`).boundingBox())!
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(async () => (await game()).movesLeft).toBe(1)
+  expect((await game()).pattern).toEqual(before)
 })

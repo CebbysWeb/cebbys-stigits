@@ -28,8 +28,20 @@ export interface LobbyPlayer {
   /** The player's chosen colour, used to tint their card backs. */
   color?: string
 }
+export interface ChatMessage {
+  seq: number
+  from: string
+  name: string
+  color?: string
+  text: string
+}
+/** Chat keeps only the latest messages, and each one short. */
+export const CHAT_KEEP = 50
+export const CHAT_MAX_LENGTH = 200
+
 export interface Snapshot {
   code: string
+  chat?: ChatMessage[]
   players: LobbyPlayer[]
   settings: Settings
   game: GameState | null
@@ -39,7 +51,7 @@ export interface Snapshot {
   sentAt?: number
 }
 
-type ToHost = { t: 'hello'; pid: string; name: string; color?: string } | { t: 'action'; action: Action }
+type ToHost = { t: 'hello'; pid: string; name: string; color?: string } | { t: 'action'; action: Action } | { t: 'chat'; text: string }
 type ToClient = { t: 'snapshot'; snapshot: Snapshot } | { t: 'error'; message: string }
 
 /**
@@ -88,6 +100,8 @@ export interface Session {
   readonly myId: string
   readonly isHost: boolean
   send(action: Action): void
+  /** Post a chat message to the table. */
+  say(text: string): void
   /** Leave for good, so the game is not offered for resuming. */
   quit(): void
   destroy(): void
@@ -283,6 +297,8 @@ export class HostSession implements Session {
       const msg = raw as ToHost
       if (msg.t === 'hello') {
         pid = this.join(conn, msg)
+      } else if (msg.t === 'chat' && pid) {
+        this.chat(pid, msg.text)
       } else if (msg.t === 'action' && pid) {
         this.handle({ ...msg.action, playerId: pid }, conn)
       }
@@ -340,6 +356,21 @@ export class HostSession implements Session {
     this.handle({ ...action, playerId: HOST_ID })
   }
 
+  say(text: string): void {
+    this.chat(HOST_ID, text)
+  }
+
+  // The host stamps each message with the sender's name and colour, so nobody can post as someone else.
+  private chat(from: string, raw: unknown): void {
+    const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LENGTH)
+    const p = this.snapshot.players.find((x) => x.id === from)
+    if (!text || !p) return
+    const chat = this.snapshot.chat ?? []
+    chat.push({ seq: (chat.at(-1)?.seq ?? 0) + 1, from, name: p.name, color: p.color, text })
+    this.snapshot.chat = chat.slice(-CHAT_KEEP)
+    this.publish()
+  }
+
   configure(patch: Partial<Settings>): void {
     if (this.snapshot.game) return
     this.snapshot.settings = { ...this.snapshot.settings, ...patch }
@@ -387,7 +418,7 @@ export class HostSession implements Session {
       }
       return
     }
-    const ms = limit * 60_000
+    const ms = limit * 1000
     this.snapshot.deadline = Date.now() + ms
     const who = g!.players[g!.current].id
     this.limitTimer = window.setTimeout(() => {
@@ -537,6 +568,10 @@ export class ClientSession implements Session {
     clearTimeout(this.retryTimer)
     this.retryTimer = 0
     this.scheduleRetry()
+  }
+
+  say(text: string): void {
+    if (this.conn?.open) this.conn.send({ t: 'chat', text } satisfies ToHost)
   }
 
   send(action: Action): void {

@@ -42,6 +42,13 @@ export class HandView {
   allowRotate = true
   allowMirror = true
 
+  /** Show the cards' backs or faces, redrawing the cards already in the hand. */
+  setFaceDown(faceDown: boolean): void {
+    if (!!this.opts.faceDown === faceDown) return
+    this.opts.faceDown = faceDown
+    for (const [id, card] of this.cards) card.innerHTML = faceDown ? '<div class="card-back"></div>' : cardSvg(id)
+  }
+
   constructor(opts: HandOptions = { interactive: true, minCard: 64, maxCard: 110 }) {
     this.opts = opts
     this.el = document.createElement('div')

@@ -49,6 +49,20 @@ export function playMove(): void {
   tone(ac, pitch * 2.4, now, 0.04, 0.08, 'sine')
 }
 
+/** A chat message arrives: one quiet, short blip. */
+export function playChat(): void {
+  const ac = ready()
+  if (!ac) return
+  tone(ac, 1046.5, ac.currentTime, 0.18, 0.08)
+}
+
+/** Time is running out: a dry tick, sharper for the last few seconds. */
+export function playTick(urgent: boolean): void {
+  const ac = ready()
+  if (!ac) return
+  tone(ac, urgent ? 1400 : 1000, ac.currentTime, 0.06, urgent ? 0.22 : 0.14, 'square', urgent ? 1100 : 800)
+}
+
 /** It's my turn: a gentle rising two-note chime. */
 export function playMyTurn(): void {
   const ac = ready()
