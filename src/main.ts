@@ -82,9 +82,13 @@ const events = {
     if (c && c.seq !== prevClaim && s.game) {
       const who = s.game.players[c.player]
       const mine = who.id === session?.myId
-      toast(c.ok ? `${mine ? 'Match! ' : `${who.name} matched! `}+1` : `${mine ? 'Not a match' : `${who.name} missed`} −1`)
+      const { penalty, mode } = s.game.settings
+      const cost = !penalty ? '' : mode === 'rounds' ? ` −${penalty}` : ` −${penalty} card${penalty > 1 ? 's' : ''}`
+      toast(c.ok ? `${mine ? 'Match! ' : `${who.name} matched! `}+1` : `${mine ? 'Not a match' : `${who.name} missed`}${cost}`)
       if (mine && !c.ok) hand.flash(c.card, 'wrong')
-      const el = c.ok ? document.querySelector<HTMLElement>(`.hand-card[data-card="${c.card}"]`) : null
+      // Two players may hold the same shape, so look only in the claimer's hand.
+      const fanOf = mine ? hand.el : document.querySelector(`.seat-fan[data-seat="${CSS.escape(who.id)}"]`)
+      const el = c.ok ? fanOf?.querySelector<HTMLElement>(`.hand-card[data-card="${c.card}"]`) ?? null : null
       if (el) {
         const fan = el.closest<HTMLElement>('.fan')
         flight = { card: c.card, from: el.getBoundingClientRect(), opacity: fan ? Number(getComputedStyle(fan).opacity) : 1 }

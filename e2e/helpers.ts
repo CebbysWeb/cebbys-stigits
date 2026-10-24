@@ -32,12 +32,12 @@ export async function dragStick(p: Page): Promise<void> {
 
 /** Drag a card from the hand up onto the board to play it. */
 export async function playCardByDrag(p: Page, card: number): Promise<void> {
-  const box = (await p.locator(`.hand-card[data-card="${card}"]`).boundingBox())!
+  const box = (await p.locator(`.seat.me .hand-card[data-card="${card}"]`).boundingBox())!
   const x = box.x + box.width * 0.25
   await p.mouse.move(x, box.y + box.height / 2)
   await p.mouse.down()
   await p.mouse.move(x, box.y - 60, { steps: 4 })
   await p.mouse.move(x, box.y - 200, { steps: 4 })
-  await expect(p.locator(`.hand-card[data-card="${card}"].will-play`)).toHaveCount(1)
+  await expect(p.locator(`.seat.me .hand-card[data-card="${card}"].will-play`)).toHaveCount(1)
   await p.mouse.up()
 }

@@ -38,7 +38,7 @@ test('offline practice against three bots, seated around the table', async ({ br
   const start = await me()
   await playCardByDrag(page, wrong.card)
   await expect(page.locator('.toast')).toContainText('Not a match')
-  await expect(page.locator(`.hand-card[data-card="${wrong.card}"].wrong`)).toHaveCount(1)
+  await expect(page.locator(`.seat.me .hand-card[data-card="${wrong.card}"].wrong`)).toHaveCount(1)
   await expect.poll(async () => (await me()).score).toBe(Math.max(0, start.score - 1))
   expect((await me()).hand).toContain(wrong.card)
 
@@ -90,7 +90,7 @@ test('drags never get stuck when the screen redraws mid-drag', async ({ browser 
     // The bot moves while I hold a card: the redraw must not leave the card stuck.
     const order = await page.evaluate(() => window.__stigits!.handOrder())
     if (order.length > 1) {
-      const box = (await page.locator(`.hand-card[data-card="${order[0]}"]`).boundingBox())!
+      const box = (await page.locator(`.seat.me .hand-card[data-card="${order[0]}"]`).boundingBox())!
       const botMove = await lastMove()
       await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2)
       await page.mouse.down()
@@ -117,7 +117,7 @@ test('cards are square and a held card turns with R / E and mirrors with F', asy
   await page.click('[data-act=practice]')
   await page.click('[data-act=start]')
   const card = (await page.evaluate(() => window.__stigits!.handOrder()))[0]
-  const el = page.locator(`.hand-card[data-card="${card}"]`)
+  const el = page.locator(`.seat.me .hand-card[data-card="${card}"]`)
   await page.waitForTimeout(700) // let the deal animation settle
   const box = (await el.boundingBox())!
   const size = await el.evaluate((e) => [e.offsetWidth, e.offsetHeight])

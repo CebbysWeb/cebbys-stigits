@@ -37,9 +37,9 @@ for (const variant of ['two-player'] as const) {
     const cardsBefore = await host.evaluate(() => window.__stigits!.handOrder())
     await host.locator('.seat.me .fan').scrollIntoViewIfNeeded()
     // Cards overlap in the fan, so grab the first card by its visible left edge.
-    const firstBox = (await host.locator(`.hand-card[data-card="${cardsBefore[0]}"]`).boundingBox())!
+    const firstBox = (await host.locator(`.seat.me .hand-card[data-card="${cardsBefore[0]}"]`).boundingBox())!
     const first = { x: firstBox.x + firstBox.width * 0.2, y: firstBox.y + firstBox.height / 2 }
-    const last = await center(host, `.hand-card[data-card="${cardsBefore[cardsBefore.length - 1]}"]`)
+    const last = await center(host, `.seat.me .hand-card[data-card="${cardsBefore[cardsBefore.length - 1]}"]`)
     await host.mouse.move(first.x, first.y)
     await host.mouse.down()
     await host.mouse.move(last.x + 40, last.y, { steps: 8 })
