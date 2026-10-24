@@ -1,7 +1,8 @@
 import './style.css'
 import { legalTargets } from './engine/geometry'
 import { allMoves, findMatchingMove, matchingCard, PILE_MAX, PILE_MIN, PILE_STEP, winnerNames, type GameState, type Settings } from './engine/game'
-import { ClientSession, HostSession, isBot, type Session, type Snapshot, MAX_PLAYERS } from './net/session'
+import { guessLang, langPickerHtml, setLang, t, translateError, type Lang } from './i18n'
+import { ClientSession, HostSession, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
 import { PlayedPile } from './ui/pile'
@@ -16,6 +17,11 @@ let selected: number | null = null
 /** Whether the controls help panel is open; kept across re-renders. */
 let helpOpen = false
 const pile = new PlayedPile()
+/** The face-down pile players refill from; it sits left of the shape, the played pile right of it. */
+const drawPile = document.createElement('div')
+drawPile.className = 'draw-pile'
+const paintDrawPile = () => { drawPile.innerHTML = `<div class="draw-card"></div><div class="draw-card"></div><div class="draw-card"></div><span class="pile-count">${t.pickupPile}</span>` }
+paintDrawPile()
 const hand = new HandView({ interactive: true, minCard: 76, maxCard: 140, onPlay: playCard, dropTarget: () => pile.el })
 
 /** Call a card: it scores if it matches the grid right now, and costs a point if not. */
@@ -42,6 +48,7 @@ const esc = (s: string): string =>
 
 /** This device's player profile (name and colour), remembered between visits. */
 const profile = loadProfile()
+setLang(profile.lang ?? guessLang())
 
 function joinCodeFromUrl(): string | null {
   const m = location.hash.match(/join=([A-Za-z0-9]+)/)
@@ -81,8 +88,8 @@ const events = {
       const { penalty, mode } = s.game.settings
       const miss = s.game.settings.miss
       const cost = mode === 'rounds' ? (penalty ? ` −${penalty}` : '')
-        : miss === 'point' ? ' −1' : miss === 'toPile' ? ' — card back to the pile' : ' — card discarded'
-      toast(c.ok ? `${mine ? 'Match! ' : `${who.name} matched! `}+1` : `${mine ? 'Not a match' : `${who.name} missed`}${cost}`)
+        : miss === 'point' ? ' −1' : miss === 'toPile' ? t.costToPile : t.costDiscard
+      toast(c.ok ? `${mine ? t.match : t.matched(who.name)} +1` : `${mine ? t.notMatch : t.missed(who.name)}${cost}`)
       if (mine && !c.ok) hand.flash(c.card, 'wrong')
       // Two players may hold the same shape, so look only in the claimer's hand.
       const fanOf = mine ? hand.el : document.querySelector(`.seat-fan[data-seat="${CSS.escape(who.id)}"]`)
@@ -99,9 +106,9 @@ const events = {
     else pile.update(s.game?.played.map((p) => p.card) ?? [])
     if (flight) pile.fly(flight.card, flight.from, flight.opacity)
   },
-  onError: toast,
+  onError: (message: string) => toast(translateError(message)),
   onDisconnect() {
-    status = 'Lost connection to the host. Reload the page to rejoin.'
+    status = t.lostHost
     snapshot = null
     session = null
     render()
@@ -110,7 +117,7 @@ const events = {
 
 async function connect(mode: 'host' | 'join' | 'practice', code?: string): Promise<void> {
   const input = document.querySelector<HTMLInputElement>('#name')
-  const name = input?.value.trim() || 'Player'
+  const name = input?.value.trim() || t.namePlaceholder
   profile.name = name
   saveProfile(profile)
   const color = profileColor(profile)
@@ -121,7 +128,7 @@ async function connect(mode: 'host' | 'join' | 'practice', code?: string): Promi
     events.onSnapshot(structuredClone((session as HostSession).snapshot))
     return
   }
-  status = mode === 'host' ? 'Opening a game…' : `Joining ${code}…`
+  status = mode === 'host' ? t.opening : t.joining(code!)
   render()
   try {
     session = mode === 'host' ? await HostSession.create(name, color, events) : await ClientSession.join(code!, name, color, events)
@@ -130,7 +137,7 @@ async function connect(mode: 'host' | 'join' | 'practice', code?: string): Promi
     if (session instanceof HostSession) events.onSnapshot(structuredClone(session.snapshot))
   } catch (err) {
     status = ''
-    toast((err as Error).message || String(err))
+    toast(translateError((err as Error).message || String(err)))
     render()
   }
 }
@@ -154,6 +161,15 @@ function render(): void {
       hand.update(me.hand)
     }
     app.querySelector('#pile-slot')?.replaceWith(pile.el)
+    app.querySelector('#draw-slot')?.replaceWith(drawPile)
+    drawPile.classList.toggle('empty', g.pileLeft === 0)
+    // The first frame was framed before the play area existed; reframe now that it is laid out.
+    if (camFresh) {
+      camFresh = false
+      Object.assign(cam, camTarget(g))
+      app.querySelector('.board')?.setAttribute('viewBox', camViewBox(g))
+    }
+    placePiles()
     pile.update(g.played.map((p) => p.card))
     for (const p of g.players) {
       const holder = app.querySelector<HTMLElement>(`.seat-fan[data-seat="${CSS.escape(p.id)}"]`)
@@ -172,25 +188,30 @@ function render(): void {
 
 function renderHome(): string {
   const code = joinCodeFromUrl()
+  const actions = status ? `<p class="status">${esc(status)}</p>` : code
+    ? `<button class="primary big" data-act="join" data-code="${code}">${t.joinGame(code)}</button>
+       <button class="link" data-act="clear-join">${t.hostInstead}</button>`
+    : `<div class="menu">
+        <button class="menu-card primary-card" data-act="host"><span class="menu-icon"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span><b>${t.hostGame}</b><small>${t.hostAbout}</small></button>
+        <button class="menu-card" data-act="practice"><span class="menu-icon"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13v1M15 13v1M9 17h6"/></svg></span><b>${t.practice}</b><small>${t.practiceAbout}</small></button>
+      </div>
+      <div class="join-card">
+        <span><b>${t.joinTitle}</b><small>${t.joinAbout}</small></span>
+        <div class="row"><input id="code" maxlength="5" placeholder="${t.codePlaceholder}" aria-label="${t.code}"/><button data-act="join-code">${t.join}</button></div>
+      </div>`
   return `<main class="home">
-    <h1>Stigits</h1>
-    <p class="tagline">Move one matchstick. Match your cards. Empty your hand.</p>
+    <header class="hero">
+      <h1>Stigits</h1>
+      <p class="tagline">${t.tagline}</p>
+    </header>
     <section class="profile">
-      <label>Your name <input id="name" maxlength="20" value="${esc(profile.name)}" placeholder="Player"/></label>
-      ${colorPickerHtml(profile)}
+      <div class="profile-head"><h2>${t.profile}</h2>${langPickerHtml()}</div>
+      <label>${t.yourName} <input id="name" maxlength="20" value="${esc(profile.name)}" placeholder="${t.namePlaceholder}"/></label>
+      ${colorPickerHtml(profile, t.yourColour)}
     </section>
-    ${status ? `<p class="status">${esc(status)}</p>` : code
-      ? `<button class="primary" data-act="join" data-code="${code}">Join game ${code}</button>
-         <button class="link" data-act="clear-join">Host my own game instead</button>`
-      : `<button class="primary" data-act="host">Host game</button>
-         <button data-act="practice">Practice vs bots (offline)</button>
-         <div class="row"><input id="code" maxlength="5" placeholder="CODE"/><button data-act="join-code">Join</button></div>`}
-    <details class="rules"><summary>How to play</summary>
-      <p>On your turn move <b>one</b> stick to a new spot. It must touch the others so the pattern stays in one piece.</p>
-      <p>Spot the shape on one of your cards on the grid (rotated or mirrored counts)? Drag that card up onto the
-      board to play it, at any time, even on someone else's turn. A match scores <b>+1</b>; a wrong call costs <b>−1</b>.</p>
-      <p><b>Standard:</b> first to an empty hand ends the round; everyone else gets −1 per card left.</p>
-      <p><b>Plus:</b> each played card is replaced from the deck. The round ends when the deck runs out.</p>
+    ${actions}
+    <details class="rules"><summary>${t.howToPlay}</summary>
+      <p>${t.rule1}</p><p>${t.rule2}</p><p>${t.rule3}</p><p>${t.rule4}</p>
     </details>
   </main>`
 }
@@ -204,9 +225,9 @@ function renderLobby(s: Snapshot): string {
 
   const players = s.players.map((p) => `<li>
       <span class="avatar" style="background: ${esc(p.color ?? 'var(--accent)')}">${esc(p.name.slice(0, 1).toUpperCase() || '?')}</span>
-      <span class="pl-name">${esc(p.name)}${p.id === session!.myId ? ' <em>(you)</em>' : ''}${isBot(p.id) ? ' <em>· bot</em>' : ''}</span>
-      ${p.id === 'host' ? '<span class="tag">host</span>' : ''}
-      ${host && isBot(p.id) ? `<button class="icon" data-act="remove" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">×</button>` : ''}
+      <span class="pl-name">${esc(p.name)}${p.id === session!.myId ? ` <em>(${t.you})</em>` : ''}${isBot(p.id) ? ` <em>· ${t.bot}</em>` : ''}</span>
+      ${p.id === 'host' ? `<span class="tag">${t.host}</span>` : ''}
+      ${host && isBot(p.id) ? `<button class="icon" data-act="remove" data-id="${esc(p.id)}" aria-label="${esc(t.remove(p.name))}">×</button>` : ''}
     </li>`).join('')
 
   // Every control is rendered for everyone; only the host can change them.
@@ -221,70 +242,71 @@ function renderLobby(s: Snapshot): string {
 
   const rounds = set.mode === 'rounds'
   const modes: [Settings['mode'], string, string][] = [
-    ['emptyDeck', 'Empty Deck', 'Refill your hand from a shared pile. When it runs out, most cards played wins.'],
-    ['rounds', 'Rounds', 'Cards never run out. Everyone takes one turn per round. Top score wins.'],
+    ['emptyDeck', t.modeEmptyDeck, t.modeEmptyDeckAbout],
+    ['rounds', t.modeRounds, t.modeRoundsAbout],
   ]
   const missRules: [Settings['miss'], string, string][] = [
-    ['toPile', 'Back to pile', 'The card leaves your hand and goes back into the draw pile.'],
-    ['discard', 'Discard', 'The card leaves your hand and is out of the game.'],
-    ['point', '−1 point', 'You lose a point and keep the card.'],
+    ['toPile', t.missToPile, t.missToPileAbout],
+    ['discard', t.missDiscard, t.missDiscardAbout],
+    ['point', t.missPoint, t.missPointAbout],
   ]
-  const missPicker = `<div class="setting setting-wide"><span><b>Wrong guess</b><small>What happens when you play a card that doesn’t match.</small></span>
-      <div class="segmented" role="radiogroup" aria-label="Wrong guess">${missRules.map(([v, label]) => `
+  const missPicker = `<div class="setting setting-wide"><span><b>${t.wrongGuess}</b><small>${t.wrongGuessAbout}</small></span>
+      <div class="segmented" role="radiogroup" aria-label="${t.wrongGuess}">${missRules.map(([v, label]) => `
         <label class="${set.miss === v ? 'on' : ''}"><input type="radio" name="miss" value="${v}" data-setting="miss" ${set.miss === v ? 'checked' : ''} ${lock}/>${label}</label>`).join('')}
       </div>
       <p class="seg-about">${missRules.find(([v]) => v === set.miss)![2]}</p>
     </div>`
   const pile = `<div class="pile-picker">
       <div class="stepper">
-        <button type="button" data-act="pile-step" data-step="-${PILE_STEP}" aria-label="${PILE_STEP} fewer cards" ${!host || set.pile <= PILE_MIN ? 'disabled' : ''}>−</button>
-        <output id="pile-value"><b>${set.pile}</b><span>cards</span></output>
-        <button type="button" data-act="pile-step" data-step="${PILE_STEP}" aria-label="${PILE_STEP} more cards" ${!host || set.pile >= PILE_MAX ? 'disabled' : ''}>+</button>
+        <button type="button" data-act="pile-step" data-step="-${PILE_STEP}" aria-label="${t.fewerCards(PILE_STEP)}" ${!host || set.pile <= PILE_MIN ? 'disabled' : ''}>−</button>
+        <output id="pile-value"><b>${set.pile}</b><span>${t.cards}</span></output>
+        <button type="button" data-act="pile-step" data-step="${PILE_STEP}" aria-label="${t.moreCards(PILE_STEP)}" ${!host || set.pile >= PILE_MAX ? 'disabled' : ''}>+</button>
       </div>
       <input type="range" class="pile-range" min="${PILE_MIN}" max="${PILE_MAX}" step="${PILE_STEP}" value="${set.pile}"
-        data-setting="pile" aria-label="Cards in the pile" style="--fill: ${((set.pile - PILE_MIN) / (PILE_MAX - PILE_MIN)) * 100}%" ${lock}/>
+        data-setting="pile" aria-label="${t.cardsInPile}" style="--fill: ${((set.pile - PILE_MIN) / (PILE_MAX - PILE_MIN)) * 100}%" ${lock}/>
       <div class="pile-scale"><span>${PILE_MIN}</span><span>${PILE_MAX}</span></div>
     </div>`
   const settings = `
-    <div class="modes" role="radiogroup" aria-label="Game mode">${modes.map(([m, label, about]) => `
+    <div class="modes" role="radiogroup" aria-label="${t.modeEmptyDeck} / ${t.modeRounds}">${modes.map(([m, label, about]) => `
       <label class="mode ${set.mode === m ? 'on' : ''}">
         <input type="radio" name="mode" value="${m}" data-setting="mode" ${set.mode === m ? 'checked' : ''} ${lock}/>
         <b>${label}</b><small>${about}</small>
       </label>`).join('')}</div>
-    ${rounds ? row('Rounds', 'Each round, every player takes one turn.', select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
-      : `<div class="setting setting-wide"><span><b>Draw pile</b><small>Everyone starts with 5 cards and refills from this pile.</small></span>${pile}</div>`}
-    ${row('Turn cards', 'Hold a card and press R or E. Off: picture the turn yourself.', toggle('rotate'))}
-    ${row('Flip cards', 'Hold a card and press F. Off: picture the mirror image.', toggle('mirror'))}
-    ${rounds ? row('Wrong guess', 'Points lost for playing a card that doesn’t match.', select('penalty', [[0, 'Nothing'], [1, '1 point'], [2, '2 points']]))
+    ${rounds ? row(t.rounds, t.roundsAbout, select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
+      : `<div class="setting setting-wide"><span><b>${t.drawPile}</b><small>${t.drawPileAbout}</small></span>${pile}</div>`}
+    ${row(t.turnCards, t.turnCardsAbout, toggle('rotate'))}
+    ${row(t.flipCards, t.flipCardsAbout, toggle('mirror'))}
+    ${rounds ? row(t.wrongGuess, t.wrongGuessPoints, select('penalty', [[0, t.nothing], [1, t.points(1)], [2, t.points(2)]]))
       : missPicker}
-    ${row('Move hints', 'Show green spots where a picked-up stick can go.', toggle('hints'))}
-    ${row('Bot speed', 'How fast bots move and spot their shapes.', select('botSpeed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['quick', 'Quick']]))}`
+    ${row(t.moveHints, t.moveHintsAbout, toggle('hints'))}
+    ${row(t.botSpeed, t.botSpeedAbout, select('botSpeed', [['relaxed', t.relaxed], ['normal', t.normal], ['quick', t.quick]]))}`
 
   return `<main class="lobby">
     <header class="lobby-head">
       <h1>Stigits</h1>
-      ${local ? '<p class="status">Offline practice against bots.</p>' : `<div class="share">
-        <input readonly value="${esc(shareLink(s.code))}" id="share" aria-label="Invite link"/>
-        <button data-act="copy">Copy link</button>
-        <span class="code">Code <b>${s.code}</b></span>
+      ${langPickerHtml()}
+      ${local ? `<p class="status">${t.offlinePractice}</p>` : `<div class="share">
+        <input readonly value="${esc(shareLink(s.code))}" id="share" aria-label="${t.inviteLink}"/>
+        <button data-act="copy">${t.copyLink}</button>
+        <span class="code">${t.code} <b>${s.code}</b></span>
       </div>`}
     </header>
     <div class="lobby-grid">
       <section class="panel">
         <div class="panel-head">
-          <h2>Players <span class="count">${n}/${MAX_PLAYERS}</span></h2>
-          ${host ? `<button data-act="add-bot" ${full ? 'disabled' : ''}>+ Add bot</button>` : ''}
+          <h2>${t.players} <span class="count">${n}/${MAX_PLAYERS}</span></h2>
+          ${host ? `<button data-act="add-bot" ${full ? 'disabled' : ''}>${t.addBot}</button>` : ''}
         </div>
         <ul class="players">${players}</ul>
       </section>
       <section class="panel">
-        <div class="panel-head"><h2>Settings</h2>${host ? '' : '<span class="tag">set by the host</span>'}</div>
+        <div class="panel-head"><h2>${t.settings}</h2>${host ? '' : `<span class="tag">${t.setByHost}</span>`}</div>
         <div class="settings">${settings}</div>
       </section>
     </div>
     <footer class="lobby-foot">
-      <p class="hint">${host ? (n < 2 ? 'Waiting for a friend to join, or add a bot…' : 'Ready when you are.') : 'Waiting for the host to start…'}</p>
-      ${host ? `<button class="primary start" data-act="start" ${n < 2 ? 'disabled' : ''}>Start game</button>` : ''}
+      <p class="hint">${host ? (n < 2 ? t.waitingFriend : t.ready) : t.waitingHost}</p>
+      ${host ? `<button class="primary start" data-act="start" ${n < 2 ? 'disabled' : ''}>${t.start}</button>` : ''}
     </footer>
   </main>`
 }
@@ -293,11 +315,9 @@ function renderGame(s: Snapshot, g: GameState): string {
   const me = g.players.findIndex((p) => p.id === session!.myId)
   const myTurn = g.phase === 'playing' && g.current === me
   const targets = myTurn && selected !== null ? legalTargets(g.pattern, selected) : []
-  const turnText = g.phase !== 'playing' ? 'Round over'
-    : myTurn ? (g.movesLeft < 1 ? 'Play a matching card to move again — or end your turn'
-      : selected !== null ? 'Drop it on a green spot'
-      : g.turnMoved ? 'Match! Move another stick' : 'Your turn — move a stick, or play a card if one already matches')
-    : `${esc(g.players[g.current].name)} is moving…`
+  const turnText = g.phase !== 'playing' ? t.roundOver
+    : myTurn ? (g.movesLeft < 1 ? t.playToMove : selected !== null ? t.dropOnSpot : g.turnMoved ? t.matchMoveAgain : t.yourTurn)
+    : t.isMoving(esc(g.players[g.current].name))
 
   // Seats follow turn order clockwise from me: the next player sits on my left.
   const seat = (i: number) => {
@@ -305,31 +325,20 @@ function renderGame(s: Snapshot, g: GameState): string {
     const online = s.players.find((x) => x.id === p.id)?.connected !== false
     const pos = i === me ? 'bottom' : seatSides(g.players.length - 1)[(i - me + g.players.length) % g.players.length - 1]
     return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
-      <div class="seat-label"><b>${esc(p.name)}${i === me ? ' (you)' : ''}</b>${online ? '' : ' <span class="off">offline</span>'}${i === g.current ? ` <span class="turn-badge">Turn ${g.turn}</span>` : ''}
-</div>
-      ${i === me && myTurn ? `<button class="primary end-turn ${g.turnMoved ? 'blink' : ''}" data-act="end-turn">End turn</button>` : ''}
+      <div class="seat-label" style="--who: ${esc(p.color ?? 'var(--accent)')}">
+        <b>${esc(p.name)}${i === me ? ` (${t.you})` : ''}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
+        <span class="pts">${t.points(p.score)}</span>
+        ${i === g.current ? `<span class="turn-badge">${t.turn(g.turn)}</span>` : ''}
+      </div>
+      ${i === me && myTurn ? `<button class="primary end-turn ${g.turnMoved ? 'blink' : ''}" data-act="end-turn">${t.endTurn}</button>` : ''}
       ${i === me
-        ? (p.hand.length ? '<div id="hand-slot"></div>' : '<p class="hint">No cards left!</p>')
+        ? (p.hand.length ? '<div id="hand-slot"></div>' : `<p class="hint">${t.noCards}</p>`)
         : `<div class="seat-fan" data-seat="${esc(p.id)}"></div>`}
     </div>`
   }
 
 
   return `<main class="game">
-    <aside class="scoreboard">
-      <h2>Scores <span class="turn-badge">Turn ${g.turn}</span></h2>
-      <table class="sb-table">
-        <thead><tr><th>Player</th><th class="num" title="Cards played">Played</th><th class="num sb-hand" title="Cards in hand">Hand</th><th class="num" title="Score">Pts</th></tr></thead>
-        <tbody>${g.players.map((p, i) => {
-          const online = s.players.find((x) => x.id === p.id)?.connected !== false
-          return `<tr class="${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
-            <td class="sb-name"><span class="dot" style="background: ${esc(p.color ?? 'var(--accent)')}"></span><span>${esc(p.name)}${i === me ? ' (you)' : ''}${online ? '' : ' <span class="off">offline</span>'}</span></td>
-            <td class="num">${p.pile.length}</td><td class="num sb-hand">${p.hand.length}</td><td class="num sb-score">${p.score}</td>
-          </tr>`
-        }).join('')}</tbody>
-      </table>
-      ${g.settings.mode === 'rounds' ? `<p class="sb-foot">Round ${g.round} of ${g.roundsTotal}</p>` : ''}
-    </aside>
     <section class="table-layout">
       ${['left', 'top', 'right'].map((side) => {
         const n = g.players.length
@@ -337,24 +346,27 @@ function renderGame(s: Snapshot, g: GameState): string {
           .filter((_, k) => seatSides(n - 1)[k] === side)
         return mine.length ? `<div class="side side-${side}">${mine.map(seat).join('')}</div>` : ''
       }).join('')}
+      <div class="play-area"></div>
       <div class="table">
-        <p class="turn ${myTurn ? 'mine' : ''}">${turnText}</p>
+        <p class="turn ${myTurn ? 'mine' : ''}">${turnText}${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
         ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn, hints: g.settings.hints }, camViewBox(g))}
       </div>
       ${seat(me)}
       <div id="pile-slot"></div>
+      <div id="draw-slot"></div>
     </section>
-    <button class="help-btn" data-act="help" aria-label="Controls">?</button>
-    ${helpOpen ? `<div class="help-panel" role="dialog" aria-label="Controls">
-      <button class="help-close" data-act="help-close" aria-label="Close">×</button>
-      <h2>Controls</h2>
+    <button class="help-btn" data-act="help" aria-label="${t.controls}">?</button>
+    <button class="help-btn quit-btn" data-act="quit" aria-label="${t.quit}" title="${t.quit}">×</button>
+    ${helpOpen ? `<div class="help-panel" role="dialog" aria-label="${t.controls}">
+      <button class="help-close" data-act="help-close" aria-label="${t.close}">×</button>
+      <h2>${t.controls}</h2>
       <ul>
-        <li><b>Move a stick:</b> drag it onto a green spot.</li>
-        <li><b>Play a card:</b> spot one of your shapes on the grid and drag the card onto the played pile on the right. +1 if it matches, ${g.settings.penalty ? `−${g.settings.penalty}` : 'no penalty'} if not.</li>
-        ${g.settings.rotate ? '<li><b>Turn a held card:</b> R clockwise, E counter-clockwise.</li>' : '<li><b>Turning cards is off</b> at this table — turn shapes in your head.</li>'}
-        ${g.settings.mirror ? '<li><b>Mirror a held card:</b> F.</li>' : '<li><b>Mirroring is off</b> at this table — flip shapes in your head.</li>'}
-        <li><b>Pan:</b> drag the empty grid.</li>
-        <li><b>Reorder:</b> drag cards sideways in your hand.</li>
+        <li>${t.helpMove}</li>
+        <li>${t.helpPlay(g.settings.penalty ? `−${g.settings.penalty}` : t.noPenalty)}</li>
+        <li>${g.settings.rotate ? t.helpTurn : t.helpTurnOff}</li>
+        <li>${g.settings.mirror ? t.helpMirror : t.helpMirrorOff}</li>
+        <li>${t.helpPan}</li>
+        <li>${t.helpReorder}</li>
       </ul>
     </div>` : ''}
     ${g.phase === 'playing' ? '' : renderRoundOver(g)}
@@ -366,12 +378,12 @@ function renderRoundOver(g: GameState): string {
   const over = g.phase === 'gameOver'
   const rows = [...g.players].sort((a, b) => b.score - a.score)
     .map((p) => `<tr><td>${esc(p.name)}</td><td>${p.pile.length}</td><td>${p.score}</td></tr>`)
-  const cols = g.settings.mode === 'rounds' ? '<th>Played</th><th>Score</th>' : '<th>Played</th><th>Counted</th>'
+  const cols = `<th>${t.played}</th><th>${g.settings.mode === 'rounds' ? t.score : t.counted}</th>`
   return `<div class="overlay"><div class="dialog">
-    <h2>${over ? `🏆 ${winnerNames(g).map(esc).join(' & ')} wins!` : `Round ${g.round} over`}</h2>
-    <table><thead><tr><th>Player</th>${cols}</tr></thead><tbody>${rows.join('')}</tbody></table>
-    ${host ? (over ? '<button class="primary" data-act="lobby">Back to lobby</button>' : '<button class="primary" data-act="next">Next round</button>')
-      : `<p class="hint">Waiting for the host…</p>`}
+    <h2>${over ? t.wins(winnerNames(g).map(esc).join(' & ')) : t.roundNOver(g.round)}</h2>
+    <table><thead><tr><th>${t.player}</th>${cols}</tr></thead><tbody>${rows.join('')}</tbody></table>
+    ${host ? (over ? `<button class="primary" data-act="lobby">${t.backToLobby}</button>` : `<button class="primary" data-act="next">${t.nextRound}</button>`)
+      : `<p class="hint">${t.waitingHostShort}</p>`}
   </div></div>`
 }
 
@@ -388,10 +400,25 @@ app.addEventListener('click', async (e) => {
       session.configure({ pile: Math.max(PILE_MIN, Math.min(PILE_MAX, next)) })
       return saveSettings(session.snapshot.settings)
     }
+    case 'lang':
+      profile.lang = el.dataset.lang as Lang
+      saveProfile(profile)
+      setLang(profile.lang)
+      paintDrawPile()
+      pile.update(snapshot?.game?.played.map((p) => p.card) ?? [])
+      return render()
     case 'help':
       helpOpen = !helpOpen
       return render()
     case 'help-close':
+      helpOpen = false
+      return render()
+    case 'quit':
+      if (!confirm(session instanceof HostSession && session.snapshot.code !== LOCAL_CODE ? t.quitConfirmAll : t.quitConfirm)) return
+      session?.destroy()
+      session = null
+      snapshot = null
+      status = ''
       helpOpen = false
       return render()
     case 'end-turn': return session!.send({ type: 'endTurn', playerId: session!.myId })
@@ -409,7 +436,7 @@ app.addEventListener('click', async (e) => {
       const link = document.querySelector<HTMLInputElement>('#share')!.value
       try {
         await navigator.clipboard.writeText(link)
-        toast('Link copied!')
+        toast(t.linkCopied)
       } catch {
         document.querySelector<HTMLInputElement>('#share')!.select()
       }
@@ -427,24 +454,44 @@ app.addEventListener('click', async (e) => {
 const boardAspect = () => window.innerHeight / Math.max(1, window.innerWidth)
 const RECENTER_DELAY_MS = 900
 const RECENTER_SECONDS = 1.2
+let camFresh = false
 const cam = { x: 0, y: 0, w: 8, ready: false, idleSince: 0 }
 let pan: { pointerId: number; startX: number; startY: number; camX: number; camY: number } | null = null
 
+/** Centre and size, in lattice units, of the sticks' bounding box. */
+function shapeBox(g: GameState): { x: number; y: number; w: number; h: number } {
+  const pts = g.pattern.flatMap((s) => (s.d === 'H' ? [[s.x, s.y], [s.x + 1, s.y]] : [[s.x, s.y], [s.x, s.y + 1]]))
+  const xs = pts.map((p) => p[0])
+  const ys = pts.map((p) => -p[1])
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 }
+}
+
+/**
+ * Frame the shape and the piles beside it so the whole group sits in the open
+ * space between the seats, as large as fits.
+ */
 function camTarget(g: GameState): { x: number; y: number; w: number } {
-  const mids = g.pattern.map(midpoint)
-  const x = mids.reduce((a, m) => a + m.x, 0) / mids.length
-  const y = -mids.reduce((a, m) => a + m.y, 0) / mids.length
-  const xs = mids.map((m) => m.x)
-  const ys = mids.map((m) => m.y)
-  // Fit the pattern plus room for targets and the seats drawn over the edges.
-  const w = Math.max(9, Math.max(...xs) - Math.min(...xs) + 6, (Math.max(...ys) - Math.min(...ys) + 7) / boardAspect())
-  return { x, y, w }
+  const box = shapeBox(g)
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const area = app.querySelector('.play-area')?.getBoundingClientRect()
+  const ax = area && area.width > 0 ? area : { left: 0, top: 0, width: vw, height: vh }
+  // Pixels per lattice unit that fit the group: piles beyond ±PILE_REACH, shape plus a square above and below.
+  const scale = Math.max(8, Math.min(vw / 9,
+    (ax.width - 16) / (2 * (PILE_REACH + PILE_SQUARES)),
+    (ax.height - 16) / Math.max(box.h + 2, PILE_SQUARES + 0.5)))
+  // Shift the view so the shape centre lands on the play area's centre.
+  const dx = ax.left + ax.width / 2 - vw / 2
+  const dy = ax.top + ax.height / 2 - vh / 2
+  return { x: box.x - dx / scale, y: box.y - dy / scale, w: vw / scale }
 }
 
 function camViewBox(g: GameState): string {
   if (!cam.ready) {
     Object.assign(cam, camTarget(g))
     cam.ready = true
+    camFresh = true
   }
   const h = cam.w * boardAspect()
   return `${cam.x - cam.w / 2} ${cam.y - h / 2} ${cam.w} ${h}`
@@ -479,6 +526,37 @@ function nudgeSticks(now: number, g: GameState, board: SVGSVGElement): void {
   }
 }
 
+/** Gap (px) between the shape and each pile. */
+/** Piles sit as far out as a straight line of 5 sticks would reach, plus 1 square of padding. */
+const PILE_REACH = 2.5 + 1
+/** Each pile is this many squares wide, so it scales with the grid. */
+const PILE_SQUARES = 2
+
+/**
+ * Keeps the pickup pile left of the shape and the played pile right of it, both
+ * centred on its height. They follow the camera, gliding when the shape changes.
+ */
+/** The piles are pinned to the grid either side of the shape centre, so they move only with it (or the camera). */
+function placePiles(): void {
+  const g = snapshot?.game
+  const ctm = app.querySelector<SVGSVGElement>('.board')?.getScreenCTM()
+  if (!g || !ctm || !pile.el.isConnected) return
+  const box = shapeBox(g)
+  const c = new DOMPoint(box.x, box.y).matrixTransform(ctm)
+  const unit = Math.hypot(ctm.a, ctm.b)
+  const reach = PILE_REACH * unit
+  const size = PILE_SQUARES * unit
+  for (const el of [pile.el, drawPile]) {
+    el.style.width = el.style.height = `${size}px`
+    el.classList.toggle('compact', size < 110)
+  }
+  const top = `${c.y - size / 2}px`
+  pile.el.style.left = `${c.x + reach}px`
+  pile.el.style.top = top
+  drawPile.style.left = `${c.x - reach - size}px`
+  drawPile.style.top = top
+}
+
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
@@ -494,6 +572,7 @@ function frame(now: number): void {
     board.setAttribute('viewBox', camViewBox(g))
   }
   if (!g) cam.ready = false
+  placePiles()
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)
@@ -545,7 +624,7 @@ app.addEventListener('pointerdown', (e) => {
   const index = Number(hit.dataset.stick)
   const targets = legalTargets(g.pattern, index)
   if (!targets.length) {
-    toast('That stick holds the pattern together — pick another.')
+    toast(t.stickHolds)
     return
   }
   e.preventDefault()

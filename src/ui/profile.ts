@@ -1,3 +1,4 @@
+import type { Lang } from '../i18n'
 import { DEFAULT_SETTINGS, type Settings } from '../engine/game'
 
 /** What this device remembers between visits: the player's name and colour, and the host's table settings. */
@@ -7,6 +8,8 @@ export interface Profile {
   h: number
   s: number
   v: number
+  /** Chosen language; unset means follow the browser. */
+  lang?: Lang
 }
 
 const PROFILE_KEY = 'stigits-profile'
@@ -37,7 +40,7 @@ export function loadProfile(): Profile {
   } catch {
     /* ignore */
   }
-  return { name: p.name ?? legacy, h: p.h ?? Math.floor(Math.random() * 360), s: p.s ?? 0.8, v: p.v ?? 0.9 }
+  return { name: p.name ?? legacy, lang: p.lang, h: p.h ?? Math.floor(Math.random() * 360), s: p.s ?? 0.8, v: p.v ?? 0.9 }
 }
 
 export const saveProfile = (p: Profile): void => write(PROFILE_KEY, p)
@@ -62,7 +65,7 @@ export const profileColor = (p: Profile): string => hsvToHex(p.h, p.s, p.v)
 export const randomColor = (): string => hsvToHex(Math.random() * 360, 0.65 + Math.random() * 0.3, 0.75 + Math.random() * 0.2)
 
 /** Markup for the colour wheel (hue around, saturation outwards) and the shade bar beside it. */
-export function colorPickerHtml(p: Profile): string {
+export function colorPickerHtml(p: Profile, label: string): string {
   const angle = (p.h * Math.PI) / 180
   return `<div class="color-picker">
     <div class="wheel" data-picker="wheel" style="--v: ${p.v}">
@@ -71,7 +74,7 @@ export function colorPickerHtml(p: Profile): string {
     <div class="shade" data-picker="shade" style="--pure: ${hsvToHex(p.h, p.s, 1)}">
       <span class="shade-dot" style="top: ${(1 - p.v) / 0.8 * 100}%"></span>
     </div>
-    <div class="swatch-col"><span class="swatch" style="background: ${profileColor(p)}"></span><small>Your colour</small></div>
+    <div class="swatch-col"><span class="swatch" style="background: ${profileColor(p)}"></span><small>${label}</small></div>
   </div>`
 }
 

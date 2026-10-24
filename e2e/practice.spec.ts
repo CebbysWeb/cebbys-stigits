@@ -177,7 +177,7 @@ test('played cards fly from the hand that played them onto the pile', async ({ b
       await page.screenshot({ path: 'e2e/results/card-flying.png' })
       await expect(page.locator('.pile-card.flying')).toHaveCount(0)
       await expect(page.locator('.pile .pile-card').last()).toHaveAttribute('data-card', String(s.match))
-      await expect(page.locator('.pile-count')).toHaveText(`${s.played.length + 1} played`)
+      await expect(page.locator('.pile .pile-count')).toHaveText(`${s.played.length + 1} played`)
       sawMine = true
       continue
     }

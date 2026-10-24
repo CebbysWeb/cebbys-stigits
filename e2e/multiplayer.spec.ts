@@ -51,12 +51,16 @@ for (const variant of ['two-player'] as const) {
     // Pan the board from an empty corner; the camera then drifts back to centre.
     await host.locator('.board').scrollIntoViewIfNeeded()
     // Distance of the view centre from the sticks' centre of mass, in board units.
+    // Distance, in squares, between the shape's centre and the middle of the open play area.
     const offCentre = () => host.evaluate(() => {
-      const [x, y, w, h] = document.querySelector('.board')!.getAttribute('viewBox')!.split(' ').map(Number)
-      const mids = window.__stigits!.snapshot()!.game!.pattern.map((s) => (s.d === 'H' ? [s.x + 0.5, -s.y] : [s.x, -s.y - 0.5]))
-      const cx = mids.reduce((a, m) => a + m[0], 0) / mids.length
-      const cy = mids.reduce((a, m) => a + m[1], 0) / mids.length
-      return Math.hypot(x + w / 2 - cx, y + h / 2 - cy)
+      const board = document.querySelector<SVGSVGElement>('.board')!
+      const ctm = board.getScreenCTM()!
+      const pts = window.__stigits!.snapshot()!.game!.pattern.flatMap((s) => (s.d === 'H' ? [[s.x, -s.y], [s.x + 1, -s.y]] : [[s.x, -s.y], [s.x, -s.y - 1]]))
+      const xs = pts.map((p) => p[0])
+      const ys = pts.map((p) => p[1])
+      const c = new DOMPoint((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2).matrixTransform(ctm)
+      const a = document.querySelector('.play-area')!.getBoundingClientRect()
+      return Math.hypot(c.x - a.left - a.width / 2, c.y - a.top - a.height / 2) / Math.hypot(ctm.a, ctm.b)
     })
     const box = (await host.locator('.board').boundingBox())!
     await host.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.45)
