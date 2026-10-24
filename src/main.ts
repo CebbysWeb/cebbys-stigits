@@ -224,8 +224,8 @@ function renderLobby(s: Snapshot): string {
         <b>${label}</b><small>${about}</small>
       </label>`).join('')}</div>
     ${rounds ? row('Rounds', 'One turn for every player per round.', select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
-      : row('Deck', `${n} × ${hand} dealt + ${deck} to draw = ${n * hand + deck + 1} of ${DECK_SIZE} cards.`,
-        select('extraCards', [[-1, 'Whole deck'], ...[5, 10, 15, 20, 30].map((x): [number, string] => [x, `Hands + ${x}`])]))}
+      : row('Pile', `${hand} in hand per player, ${deck} in pile.`,
+        select('extraCards', [[-1, `All (${DECK_SIZE - 1 - n * hand})`], ...[5, 10, 15, 20, 30].map((x): [number, string] => [x, `${x} cards`])]))}
     ${row('Cards in hand', `Each player ${rounds ? 'refills to' : 'holds'} ${hand}.`, select('handSize', [[0, `Auto (${autoHandSize(n)})`], ...[3, 4, 5, 6, 7].map((h): [number, string, boolean] => [h, String(h), maxHand(h)])]))}
     ${row('Rotate cards', 'R / E turn a held card. Off: turn it in your head.', toggle('rotate'))}
     ${row('Mirror cards', 'F flips a held card. Off: flip it in your head.', toggle('mirror'))}
