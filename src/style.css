@@ -161,7 +161,10 @@ button.icon:hover:not(:disabled) { background: #fee2e2; color: var(--head); box-
 .grid-major { stroke: var(--grid-major); stroke-width: 0.022; fill: none; }
 .grid-minor { stroke: var(--grid-minor); stroke-width: 0.012; fill: none; }
 /* Plain white paper behind the whole game screen. */
-body:has(.game) { background-color: var(--paper); }
+body:has(.game) { background-color: var(--paper); overflow: hidden; }
+#app:has(.game) { padding: 0; max-width: none; }
+.sb-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 0.75rem; color: var(--muted); }
+@media (max-width: 560px) { .sb-foot { font-size: 0.65rem; } }
 .card-grid { stroke: var(--grid-major); stroke-width: 0.03; fill: none; }
 .shaft { stroke: var(--stick, var(--wood)); stroke-width: 0.12; stroke-linecap: round; }
 .stick.moved .shaft { stroke: #f59e0b; }
@@ -172,6 +175,21 @@ body:has(.game) { background-color: var(--paper); }
 .ghost { stroke: var(--ghost); stroke-width: 0.1; stroke-dasharray: 0.12 0.1; stroke-linecap: round; pointer-events: none; opacity: 0.7; transition: all 0.12s; }
 .ghost.hot { stroke-width: 0.2; opacity: 1; stroke-dasharray: none; }
 .ghost.blind, .ghost.blind.hot { opacity: 0; }
+.stick .shaft { transition: stroke 0.3s; }
+/* Idle hint: the movable sticks wobble, swell and light up, one after another. */
+.board.nudge .stick.pickable { transform-box: fill-box; transform-origin: center; animation: stick-nudge 1.2s ease-in-out; }
+.board.nudge .stick.pickable .shaft { animation: stick-glow 1.2s ease-in-out; }
+.board.nudge .stick.pickable:nth-of-type(2n) { animation-delay: 0.08s; }
+.board.nudge .stick.pickable:nth-of-type(3n) { animation-delay: 0.16s; }
+@keyframes stick-nudge {
+  0%, 100% { transform: none; }
+  20% { transform: scale(1.18) rotate(7deg); }
+  40% { transform: scale(1.18) rotate(-7deg); }
+  60% { transform: scale(1.12) rotate(4deg); }
+  80% { transform: scale(1.05) rotate(-2deg); }
+}
+@keyframes stick-glow { 0%, 100% { stroke: var(--stick, var(--wood)); } 25%, 70% { stroke: var(--accent); } }
+@media (prefers-reduced-motion: reduce) { .board.nudge .stick.pickable { animation: none; } }
 .stick.held { pointer-events: none; filter: drop-shadow(0 0.08px 0.08px rgb(0 0 0 / 0.4)); }
 .stick.held .shaft { stroke-width: 0.15; }
 .stick.held.snapped .shaft { stroke: #f59e0b; }
@@ -198,8 +216,6 @@ body:has(.game) { background-color: var(--paper); }
 .card.played { border-color: var(--accent); aspect-ratio: auto; }
 .card.played span { font-size: 0.75rem; }
 
-.log { color: var(--muted); font-size: 0.85rem; position: fixed; left: 12px; bottom: 8px; z-index: 3; max-height: 40vh; overflow: auto; background: color-mix(in srgb, var(--bg) 85%, transparent); border-radius: 8px; padding: 2px 6px; }
-.log ol { padding-left: 20px; margin: 6px 0; }
 
 .overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; padding: 16px; z-index: 10; }
 .dialog { background: var(--panel); border-radius: 20px; box-shadow: 0 24px 60px rgb(15 23 42 / 0.25); padding: 20px; width: min(400px, 100%); display: flex; flex-direction: column; gap: 14px; }
@@ -241,11 +257,12 @@ body:has(.game) { background-color: var(--paper); }
 .seat { position: relative; }
 .seat::before {
   content: ''; position: absolute; inset: -30px; z-index: -1; pointer-events: none; border-radius: 50%;
-  background: radial-gradient(closest-side, rgb(255 237 213 / 0.95), rgb(254 215 170 / 0.55) 55%, transparent);
-  filter: blur(8px); opacity: 0; transition: opacity 0.4s;
+  background: radial-gradient(closest-side, rgb(251 146 60 / 0.75), rgb(253 186 116 / 0.5) 45%, rgb(254 215 170 / 0.2) 75%, transparent);
+  filter: blur(10px); opacity: 0; transition: opacity 0.4s;
 }
 .seat.active::before { opacity: 1; animation: turn-glow 2.4s ease-in-out infinite; }
-.seat-bottom::before { inset: 0 120px -30px 0; }
+/* My own glow rises from the bottom edge of the screen, under my cards. */
+.seat-bottom::before { inset: 35% 10% -140px; }
 @keyframes turn-glow { 50% { transform: scale(1.06); filter: blur(12px); } }
 @media (prefers-reduced-motion: reduce) { .seat.active::before { animation: none; } }
 .seat-top .seat-fan { width: 100%; max-width: min(320px, 70vw); transform: rotate(180deg); }
@@ -307,7 +324,7 @@ body:has(.game) { background-color: var(--paper); }
 /* Positioned absolutely below the cards, so the hand never jumps when it appears. */
 .seat-bottom { position: relative; }
 .seat-bottom .end-turn {
-  position: absolute; bottom: -48px; left: 50%; translate: -50% 0;
+  position: absolute; bottom: -36px; left: 50%; translate: -50% 0;
   min-height: 34px; padding: 6px 22px;
   pointer-events: auto; z-index: 5;
 }
@@ -376,3 +393,11 @@ body:has(.game) { background-color: var(--paper); }
   .game header .code { display: none; }
   .turn { white-space: normal; text-align: center; width: calc(100vw - 32px); font-size: 0.85rem; }
 }
+
+/* After a move, End turn pulses to say the turn can be finished. */
+.end-turn.blink { animation: end-blink 1.1s ease-in-out infinite; }
+@keyframes end-blink {
+  0%, 100% { box-shadow: 0 4px 14px rgb(249 115 22 / 0.35); filter: none; }
+  50% { box-shadow: 0 0 0 8px rgb(249 115 22 / 0.25), 0 6px 22px rgb(249 115 22 / 0.6); filter: brightness(1.12); }
+}
+@media (prefers-reduced-motion: reduce) { .end-turn.blink { animation: none; } }

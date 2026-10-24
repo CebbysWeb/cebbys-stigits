@@ -302,7 +302,7 @@ function renderGame(s: Snapshot, g: GameState): string {
     return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
       <div class="seat-label"><b>${esc(p.name)}${i === me ? ' (you)' : ''}</b>${online ? '' : ' <span class="off">offline</span>'}${i === g.current ? ` <span class="turn-badge">Turn ${g.turn}</span>` : ''}
 </div>
-      ${i === me && myTurn ? '<button class="primary end-turn" data-act="end-turn">End turn</button>' : ''}
+      ${i === me && myTurn ? `<button class="primary end-turn ${g.turnMoved ? 'blink' : ''}" data-act="end-turn">End turn</button>` : ''}
       ${i === me
         ? (p.hand.length ? '<div id="hand-slot"></div>' : '<p class="hint">No cards left!</p>')
         : `<div class="seat-fan" data-seat="${esc(p.id)}"></div>`}
@@ -311,10 +311,6 @@ function renderGame(s: Snapshot, g: GameState): string {
 
 
   return `<main class="game">
-    <header>
-      <span>${g.settings.mode === 'rounds' ? `Rounds · Round ${g.round}/${g.roundsTotal}` : `Empty Deck · ${g.pileLeft} cards in the pile`}</span>
-      <span class="code">Code ${s.code}</span>
-    </header>
     <aside class="scoreboard">
       <h2>Scores <span class="turn-badge">Turn ${g.turn}</span></h2>
       <ol>${g.players.map((p, i) => {
@@ -325,6 +321,7 @@ function renderGame(s: Snapshot, g: GameState): string {
           <span class="sb-meta">${p.pile.length} played · ${p.hand.length} in hand</span>
         </li>`
       }).join('')}</ol>
+      <p class="sb-foot">${g.settings.mode === 'rounds' ? `Round ${g.round} of ${g.roundsTotal}` : `${g.pileLeft} cards left in the pile`}</p>
     </aside>
     <section class="table-layout">
       ${['left', 'top', 'right'].map((side) => {
@@ -353,7 +350,6 @@ function renderGame(s: Snapshot, g: GameState): string {
         <li><b>Reorder:</b> drag cards sideways in your hand.</li>
       </ul>
     </div>` : ''}
-    <details class="log"><summary>Game log</summary><ol>${g.log.slice(-30).reverse().map((l) => `<li>${esc(l)}</li>`).join('')}</ol></details>
     ${g.phase === 'playing' ? '' : renderRoundOver(g)}
   </main>`
 }
@@ -447,11 +443,36 @@ function camViewBox(g: GameState): string {
 }
 
 let lastFrame = performance.now()
+/** Idle hint: on my turn, if no stick is touched for 10 s, the sticks wobble, then again every 5 s. */
+const NUDGE_AFTER_MS = 10_000
+const NUDGE_EVERY_MS = 5_000
+let stickTouchedAt = performance.now()
+let nudgedAt = 0
+let nudgeTurn = ''
+
+function nudgeSticks(now: number, g: GameState, board: SVGSVGElement): void {
+  // A new turn (or round) restarts the idle clock.
+  const turnKey = `${g.round}:${g.turn}:${g.current}`
+  if (turnKey !== nudgeTurn) {
+    nudgeTurn = turnKey
+    stickTouchedAt = now
+  }
+  if (!isMyTurn() || g.movesLeft < 1 || drag) return
+  const idle = now - stickTouchedAt
+  if (idle < NUDGE_AFTER_MS || now - nudgedAt < NUDGE_EVERY_MS) return
+  nudgedAt = now
+  board.classList.remove('nudge')
+  void board.getBoundingClientRect() // restart the animation
+  board.classList.add('nudge')
+  setTimeout(() => board.classList.remove('nudge'), 1400)
+}
+
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
   const g = snapshot?.game
   const board = app.querySelector<SVGSVGElement>('.board')
+  if (g && board) nudgeSticks(now, g, board)
   if (g && board && !pan && !drag && now - cam.idleSince > RECENTER_DELAY_MS) {
     const t = camTarget(g)
     const k = 1 - Math.exp(-dt / (RECENTER_SECONDS / 3))
@@ -516,6 +537,7 @@ app.addEventListener('pointerdown', (e) => {
     return
   }
   e.preventDefault()
+  stickTouchedAt = performance.now()
   selected = index
   drag = { index, pointerId: e.pointerId, targets, snap: null }
   render()
