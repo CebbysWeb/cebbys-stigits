@@ -41,7 +41,11 @@ export function iceServers(): RTCIceServer[] {
   return servers
 }
 
-const peerOptions = () => ({ config: { iceServers: iceServers() } })
+// `?relay=1` forces traffic through TURN, to check the relay works.
+const forceRelay = new URLSearchParams(location.search).has('relay')
+const peerOptions = () => ({
+  config: { iceServers: iceServers(), iceTransportPolicy: forceRelay ? 'relay' : 'all' } as RTCConfiguration,
+})
 
 export function randomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'

@@ -60,3 +60,47 @@ for (const variant of ['standard', 'plus'] as const) {
     await host.screenshot({ path: `e2e/results/${variant}-final.png` })
   })
 }
+
+test('four players join and finish a game', async ({ browser }) => {
+  test.setTimeout(180_000)
+  const pages: Page[] = []
+  for (let i = 0; i < 4; i++) pages.push(await (await browser.newContext()).newPage())
+  const [host, ...guests] = pages
+  await host.goto(BASE)
+  await host.fill('#name', 'P1')
+  await host.click('[data-act=host]')
+  const link = await host.locator('#share').inputValue()
+  for (const [i, g] of guests.entries()) {
+    await g.goto(link)
+    await g.fill('#name', `P${i + 2}`)
+    await g.click('[data-act=join]')
+    await expect(host.locator('.players li')).toHaveCount(i + 2)
+  }
+  await host.selectOption('#rounds', '1')
+  await host.click('[data-act=start]')
+  for (const g of guests) await expect(g.locator('.board')).toBeVisible()
+
+  const phase = () => host.evaluate(() => window.__stigits!.snapshot()?.game?.phase)
+  for (let i = 0; i < 4000 && (await phase()) !== 'gameOver'; i++) {
+    let moved = false
+    for (const p of pages) if (!moved) moved = await p.evaluate(() => window.__stigits!.autoMove())
+    await host.waitForTimeout(moved ? 15 : 50)
+  }
+  for (const p of pages) await expect(p.locator('.dialog h2')).toContainText('wins')
+  const states = await Promise.all(pages.map((p) => p.evaluate(() => window.__stigits!.snapshot()!.game)))
+  for (const s of states) expect(s).toEqual(states[0])
+  expect(states[0]!.players.map((p) => p.name)).toEqual(['P1', 'P2', 'P3', 'P4'])
+})
+
+// Only meaningful once TURN credentials are configured in the deployed build.
+test('connects through the TURN relay only', async ({ browser }) => {
+  test.skip(!process.env.E2E_RELAY, 'set E2E_RELAY=1 once TURN credentials are deployed')
+  const host = await (await browser.newContext()).newPage()
+  const guest = await (await browser.newContext()).newPage()
+  await host.goto(BASE + '?relay=1')
+  await host.click('[data-act=host]')
+  const code = (await host.locator('#share').inputValue()).split('join=')[1]
+  await guest.goto(`${BASE}?relay=1#join=${code}`)
+  await guest.click('[data-act=join]')
+  await expect(host.locator('.players li')).toHaveCount(2, { timeout: 20_000 })
+})

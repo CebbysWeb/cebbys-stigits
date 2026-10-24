@@ -30,6 +30,7 @@ Then re-run the deploy workflow. The credential ends up in the public JS bundle,
 npm install
 npm run dev      # local dev server
 npm test         # rules engine unit tests
-npm run e2e      # two browser windows play full games over PeerJS (needs internet)
+npm run e2e      # 2- and 4-player games over PeerJS (needs internet)
+E2E_URL=https://cebbysweb.github.io/cebbys-stigits/ E2E_RELAY=1 npm run e2e   # also checks the TURN relay
 npm run build
 ```
