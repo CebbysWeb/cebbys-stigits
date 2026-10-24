@@ -1,6 +1,7 @@
 import './style.css'
 import { legalTargets } from './engine/geometry'
-import { allMoves, findMatchingMove, matchingCard, winnerNames, type GameState } from './engine/game'
+import { allMoves, autoHandSize, deckFor, findMatchingMove, handSizeFor, matchingCard, winnerNames, type GameState, type Settings } from './engine/game'
+import { DECK_SIZE } from './engine/shapes'
 import { ClientSession, HostSession, isBot, type Session, type Snapshot, MAX_PLAYERS } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
@@ -142,6 +143,8 @@ function render(): void {
     const slot = app.querySelector('#hand-slot')
     if (slot && me) {
       slot.replaceWith(hand.el)
+      hand.allowRotate = g.settings.rotate
+      hand.allowMirror = g.settings.mirror
       hand.update(me.hand)
     }
     app.querySelector('#pile-slot')?.replaceWith(pile.el)
@@ -184,24 +187,68 @@ function renderHome(): string {
 
 function renderLobby(s: Snapshot): string {
   const host = session instanceof HostSession
-  const link = shareLink(s.code)
-  const players = s.players.map((p) => `<li>${isBot(p.id) ? '🤖 ' : ''}${esc(p.name)}${p.id === session!.myId ? ' (you)' : ''}${p.id === 'host' ? ' ★' : ''}${
-    host && isBot(p.id) ? ` <button class="link" data-act="remove" data-id="${esc(p.id)}">remove</button>` : ''}</li>`)
   const local = host && (session as HostSession).isLocal
+  const n = s.players.length
+  const set = s.settings
+  const full = n >= MAX_PLAYERS
+  const hand = handSizeFor(set, n)
+  const deck = deckFor(set, n)
+
+  const players = s.players.map((p) => `<li>
+      <span class="avatar ${isBot(p.id) ? 'bot' : ''}">${esc(p.name.slice(0, 1).toUpperCase() || '?')}</span>
+      <span class="pl-name">${esc(p.name)}${p.id === session!.myId ? ' <em>(you)</em>' : ''}${isBot(p.id) ? ' <em>· bot</em>' : ''}</span>
+      ${p.id === 'host' ? '<span class="tag">host</span>' : ''}
+      ${host && isBot(p.id) ? `<button class="icon" data-act="remove" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">×</button>` : ''}
+    </li>`).join('')
+
+  // Every control is rendered for everyone; only the host can change them.
+  const lock = host ? '' : 'disabled'
+  const select = (key: keyof Settings, opts: [string | number, string, boolean?][]) =>
+    `<select data-setting="${key}" ${lock}>${opts.map(([v, label, off]) =>
+      `<option value="${v}" ${String(set[key]) === String(v) ? 'selected' : ''} ${off ? 'disabled' : ''}>${label}</option>`).join('')}</select>`
+  const toggle = (key: keyof Settings) =>
+    `<input type="checkbox" class="switch" data-setting="${key}" ${set[key] ? 'checked' : ''} ${lock}/>`
+  const row = (label: string, hint: string, control: string) =>
+    `<label class="setting"><span><b>${label}</b><small>${hint}</small></span>${control}</label>`
+  const maxHand = (h: number) => n * h > DECK_SIZE - 1
+
+  const settings = `
+    ${row('Rounds', 'Highest total score wins.', select('rounds', [1, 2, 3, 5, 7].map((r) => [r, String(r)])))}
+    ${row('Cards in hand', `Each player holds ${hand}.`, select('handSize', [[0, `Auto (${autoHandSize(n)})`], ...[3, 4, 5, 6, 7].map((h): [number, string, boolean] => [h, String(h), maxHand(h)])]))}
+    ${row('Deck', `${n} × ${hand} dealt + ${deck} to draw = ${n * hand + deck + 1} of ${DECK_SIZE} cards.`,
+      select('extraCards', [[-1, 'Whole deck'], ...[5, 10, 15, 20, 30].map((x): [number, string] => [x, `Hands + ${x}`])]))}
+    ${row('Rotate cards', 'R / E turn a held card. Off: turn it in your head.', toggle('rotate'))}
+    ${row('Mirror cards', 'F flips a held card. Off: flip it in your head.', toggle('mirror'))}
+    ${row('Wrong call', 'Points lost for a card that does not match.', select('penalty', [[0, 'No penalty'], [1, '−1 point'], [2, '−2 points']]))}
+    ${row('Move hints', 'Show the green spots a stick can go to.', toggle('hints'))}
+    ${row('Bot speed', 'How quickly bots move and spot shapes.', select('botSpeed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['quick', 'Quick']]))}`
+
   return `<main class="lobby">
-    <h1>Stigits</h1>
-    ${local ? '<p class="status">Offline practice: add up to 3 bots, then start.</p>' : `<section class="share">
-      <p>Share this link with your friends:</p>
-      <div class="row"><input readonly value="${esc(link)}" id="share"/><button data-act="copy">Copy</button></div>
-      <p class="code">Code <b>${s.code}</b></p>
-    </section>`}
-    <section><h2>Players (${s.players.length}/4)</h2><ul class="players">${players.join('')}</ul></section>
-    ${host ? `<section class="options">
-      <label>Rounds <select id="rounds">${[1, 2, 3, 5, 7].map((n) => `<option ${n === s.rounds ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-      ${s.players.length < MAX_PLAYERS ? '<button data-act="add-bot">Add a bot 🤖</button>' : ''}
-      <button class="primary" data-act="start" ${s.players.length < 2 ? 'disabled' : ''}>Start game</button>
-      ${s.players.length < 2 ? '<p class="hint">Waiting for a friend to join, or add a bot…</p>' : ''}
-    </section>` : `<p class="status">Waiting for the host to start (${s.rounds} rounds)…</p>`}
+    <header class="lobby-head">
+      <h1>Stigits</h1>
+      ${local ? '<p class="status">Offline practice against bots.</p>' : `<div class="share">
+        <input readonly value="${esc(shareLink(s.code))}" id="share" aria-label="Invite link"/>
+        <button data-act="copy">Copy link</button>
+        <span class="code">Code <b>${s.code}</b></span>
+      </div>`}
+    </header>
+    <div class="lobby-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Players <span class="count">${n}/${MAX_PLAYERS}</span></h2>
+          ${host ? `<button data-act="add-bot" ${full ? 'disabled' : ''}>+ Add bot</button>` : ''}
+        </div>
+        <ul class="players">${players}</ul>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Settings</h2>${host ? '' : '<span class="tag">set by the host</span>'}</div>
+        <div class="settings">${settings}</div>
+      </section>
+    </div>
+    <footer class="lobby-foot">
+      <p class="hint">${host ? (n < 2 ? 'Waiting for a friend to join, or add a bot…' : 'Ready when you are.') : 'Waiting for the host to start…'}</p>
+      ${host ? `<button class="primary start" data-act="start" ${n < 2 ? 'disabled' : ''}>Start game</button>` : ''}
+    </footer>
   </main>`
 }
 
@@ -221,7 +268,7 @@ function renderGame(s: Snapshot, g: GameState): string {
     const online = s.players.find((x) => x.id === p.id)?.connected !== false
     const pos = i === me ? 'bottom' : seatSides(g.players.length - 1)[(i - me + g.players.length) % g.players.length - 1]
     return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
-      <div class="seat-label"><b>${esc(p.name)}${i === me ? ' (you)' : ''}</b>${online ? '' : ' <span class="off">offline</span>'}
+      <div class="seat-label"><b>${esc(p.name)}${i === me ? ' (you)' : ''}</b>${online ? '' : ' <span class="off">offline</span>'}${i === g.current ? ` <span class="turn-badge">Turn ${g.turn}</span>` : ''}
 </div>
       ${i === me && myTurn ? '<button class="primary end-turn" data-act="end-turn">End turn</button>' : ''}
       ${i === me
@@ -237,7 +284,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       <span class="code">Code ${s.code}</span>
     </header>
     <aside class="scoreboard">
-      <h2>Scores</h2>
+      <h2>Scores <span class="turn-badge">Turn ${g.turn}</span></h2>
       <ol>${g.players.map((p, i) => {
         const online = s.players.find((x) => x.id === p.id)?.connected !== false
         return `<li class="${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
@@ -256,7 +303,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       }).join('')}
       <div class="table">
         <p class="turn ${myTurn ? 'mine' : ''}">${turnText}</p>
-        ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn }, camViewBox(g))}
+        ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn, hints: g.settings.hints }, camViewBox(g))}
       </div>
       ${seat(me)}
       <div id="pile-slot"></div>
@@ -267,8 +314,9 @@ function renderGame(s: Snapshot, g: GameState): string {
       <h2>Controls</h2>
       <ul>
         <li><b>Move a stick:</b> drag it onto a green spot.</li>
-        <li><b>Play a card:</b> spot one of your shapes on the grid and drag the card up. +1 if it matches, −1 if not.</li>
-        <li><b>Turn a held card:</b> R clockwise, E counter-clockwise. <b>F</b> mirrors it.</li>
+        <li><b>Play a card:</b> spot one of your shapes on the grid and drag the card up. +1 if it matches, ${g.settings.penalty ? `−${g.settings.penalty}` : 'no penalty'} if not.</li>
+        ${g.settings.rotate ? '<li><b>Turn a held card:</b> R clockwise, E counter-clockwise.</li>' : '<li><b>Turning cards is off</b> at this table — turn shapes in your head.</li>'}
+        ${g.settings.mirror ? '<li><b>Mirror a held card:</b> F.</li>' : '<li><b>Mirroring is off</b> at this table — flip shapes in your head.</li>'}
         <li><b>Pan:</b> drag the empty grid.</li>
         <li><b>Reorder:</b> drag cards sideways in your hand.</li>
       </ul>
@@ -469,7 +517,8 @@ function updateDrag(board: SVGSVGElement, e: PointerEvent): void {
   // Snapped: preview the stick in place. Otherwise it floats under the pointer.
   const dir = snapshot!.game!.pattern[d.index].d
   const floating: Stick = dir === 'H' ? { x: at.x - 0.5, y: at.y, d: 'H' } : { x: at.x, y: at.y - 0.5, d: 'V' }
-  const shown = d.snap !== null ? d.targets[d.snap] : floating
+  // Without move hints the stick never snaps into place, so it reveals nothing.
+  const shown = d.snap !== null && snapshot!.game!.settings.hints ? d.targets[d.snap] : floating
   board.querySelector('.drag-layer')!.innerHTML = stickSvg(shown, `class="stick held ${d.snap !== null ? 'snapped' : ''}"`)
 }
 
@@ -490,10 +539,12 @@ window.addEventListener('pointercancel', (e) => endDrag(e, false))
 
 app.addEventListener('change', (e) => {
   if (!(session instanceof HostSession)) return
-  const id = (e.target as Element).id
-  if (id === 'rounds') {
-    session.configure(Number(document.querySelector<HTMLSelectElement>('#rounds')!.value))
-  }
+  const el = e.target as HTMLInputElement | HTMLSelectElement
+  const key = el.dataset.setting as keyof Settings | undefined
+  if (!key) return
+  const value = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked
+    : key === 'botSpeed' ? el.value : Number(el.value)
+  session.configure({ [key]: value })
 })
 
 window.addEventListener('beforeunload', (e) => {

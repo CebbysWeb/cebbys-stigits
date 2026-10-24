@@ -85,6 +85,23 @@ describe('big games', () => {
   })
 })
 
+describe('table settings', () => {
+  const two = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]
+  it('deals the chosen hand size and trims the deck to hands + N', () => {
+    const s = newGame(two, { rounds: 1, seed: 2, handSize: 4, extraCards: 10 })
+    expect(s.players.map((p) => p.hand.length)).toEqual([4, 4])
+    expect(s.deck.length).toBe(10)
+  })
+  it('uses the chosen wrong-call penalty', () => {
+    for (const penalty of [0, 2]) {
+      const s = newGame(two, { rounds: 1, seed: 2, penalty })
+      const wrong = s.players[1].hand.find((c) => SHAPE_CANON[c] !== canonical(s.pattern))!
+      const next = applyAction(s, { type: 'claim', playerId: 'b', card: wrong, seen: s.moveCount })
+      expect(next.players[1].score).toBe(0 - penalty)
+    }
+  })
+})
+
 describe('deck', () => {
   it('has the 55 distinct pentasticks', () => {
     expect(DECK_SIZE).toBe(55)
@@ -192,8 +209,11 @@ describe('turns', () => {
   })
 
   it('moving is optional: the turn can end without a move', () => {
-    const next = end(newGame(players, { rounds: 1, seed: 5 }))
+    const start = newGame(players, { rounds: 1, seed: 5 })
+    expect(start.turn).toBe(1)
+    const next = end(start)
     expect(next.current).toBe(1)
+    expect(next.turn).toBe(2)
   })
 
   it('a match by the mover earns another move; a match by others does not', () => {

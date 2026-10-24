@@ -36,6 +36,9 @@ export class HandView {
   private drag: { id: number; pointerId: number; startX: number; startY: number; baseX: number } | null = null
 
   private opts: HandOptions
+  /** Table rules: whether R/E may turn and F may mirror a held card. */
+  allowRotate = true
+  allowMirror = true
 
   constructor(opts: HandOptions = { interactive: true, minCard: 64, maxCard: 110 }) {
     this.opts = opts
@@ -165,6 +168,7 @@ export class HandView {
     if (!this.drag || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
     const key = e.key.toLowerCase()
     if (key !== 'r' && key !== 'e' && key !== 'f') return
+    if (key === 'f' ? !this.allowMirror : !this.allowRotate) return
     e.preventDefault()
     const id = this.drag.id
     const o = this.orient.get(id) ?? { turns: 0, flip: false }

@@ -45,6 +45,8 @@ export interface BoardView {
   targets: Stick[]
   lastTo: Stick | null
   interactive: boolean
+  /** Draw the spots a picked-up stick can go to. */
+  hints?: boolean
 }
 
 /**
@@ -67,7 +69,7 @@ export function boardSvg(v: BoardView, vb: string): string {
     return stickSvg(s, `class="${cls.join(' ')}" data-stick="${i}"`) +
       (v.interactive ? line(s, `class="hit" data-stick="${i}"`) : '')
   })
-  const targets = v.targets.map((t, i) => line(t, `class="ghost" data-ghost="${i}"`))
+  const targets = v.targets.map((t, i) => line(t, `class="ghost ${v.hints === false ? 'blind' : ''}" data-ghost="${i}"`))
   return `<svg class="board ${v.interactive ? 'interactive' : ''}" viewBox="${vb}">${grid}${targets.join('')}${sticks.join('')}<g class="drag-layer"></g></svg>`
 }
 

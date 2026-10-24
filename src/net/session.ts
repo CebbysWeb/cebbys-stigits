@@ -1,5 +1,5 @@
 import Peer, { type DataConnection } from 'peerjs'
-import { allMoves, applyAction, findMatchingMove, matchingCard, newGame, type Action, type GameState } from '../engine/game'
+import { allMoves, applyAction, DEFAULT_SETTINGS, findMatchingMove, matchingCard, newGame, type Action, type GameState, type Settings } from '../engine/game'
 
 const PEER_PREFIX = 'cebbys-stigits-'
 export const HOST_ID = 'host'
@@ -18,6 +18,7 @@ const BOT_OWN_SHAPE_MS = [400, 900]
 // Out of moves, a bot waits a moment (others may still call the shape) and ends its turn.
 const BOT_END_TURN_MS = [1200, 2000]
 const between = ([min, max]: number[]) => min + Math.random() * (max - min)
+const BOT_PACE = { relaxed: 1.6, normal: 1, quick: 0.55 }
 export const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX)
 
 export interface LobbyPlayer {
@@ -28,7 +29,7 @@ export interface LobbyPlayer {
 export interface Snapshot {
   code: string
   players: LobbyPlayer[]
-  rounds: number
+  settings: Settings
   game: GameState | null
 }
 
@@ -110,7 +111,7 @@ export class HostSession implements Session {
     this.snapshot = {
       code,
       players: [{ id: HOST_ID, name, connected: true }],
-      rounds: 3,
+      settings: { ...DEFAULT_SETTINGS },
       game: null,
     }
     peer?.on('connection', (conn) => this.accept(conn))
@@ -164,7 +165,7 @@ export class HostSession implements Session {
       } else {
         this.handle({ type: 'endTurn', playerId: bot.id })
       }
-    }, between(delay))
+    }, between(delay) * BOT_PACE[g.settings.botSpeed])
   }
 
   // Any bot holding the shape on the grid calls it after a pause, if still valid then.
@@ -178,7 +179,7 @@ export class HostSession implements Session {
       if (h < 0) continue
       const card = bot.hand[h]
       const seen = g.moveCount
-      const delay = between(bot.id === mover ? BOT_OWN_SHAPE_MS : BOT_SPOT_MS)
+      const delay = between(bot.id === mover ? BOT_OWN_SHAPE_MS : BOT_SPOT_MS) * BOT_PACE[g.settings.botSpeed]
       this.botClaims.set(bot.id, window.setTimeout(() => {
         this.botClaims.delete(bot.id)
         const now = this.snapshot.game
@@ -265,15 +266,16 @@ export class HostSession implements Session {
     this.handle({ ...action, playerId: HOST_ID })
   }
 
-  configure(rounds: number): void {
-    this.snapshot.rounds = rounds
+  configure(patch: Partial<Settings>): void {
+    if (this.snapshot.game) return
+    this.snapshot.settings = { ...this.snapshot.settings, ...patch }
     this.publish()
   }
 
   start(): void {
     const s = this.snapshot
     s.players = s.players.filter((p) => p.connected)
-    s.game = newGame(s.players, { rounds: s.rounds })
+    s.game = newGame(s.players, { ...s.settings })
     this.publish()
   }
 

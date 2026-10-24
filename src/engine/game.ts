@@ -4,8 +4,37 @@ import { DECK_SIZE, SHAPES, SHAPE_CANON } from './shapes'
 export const HAND_SIZE = 5
 export const MAX_PLAYERS = 12
 
-/** Cards each player holds: fewer in big games so the 55-card deck still lasts. */
-export const handSize = (players: number): number => (players <= 6 ? HAND_SIZE : players <= 9 ? 4 : 3)
+/** Cards each player holds by default: fewer in big games so the 55-card deck still lasts. */
+export const autoHandSize = (players: number): number => (players <= 6 ? HAND_SIZE : players <= 9 ? 4 : 3)
+
+/** Table rules the host picks in the lobby. */
+export interface Settings {
+  rounds: number
+  /** Cards per player; 0 picks a size from the player count. */
+  handSize: number
+  /** Cards in play per round beyond the dealt hands; -1 uses the whole deck. */
+  extraCards: number
+  /** Whether players may turn (R/E) and mirror (F) a held card to compare it. */
+  rotate: boolean
+  mirror: boolean
+  /** Points lost for playing a card that does not match. */
+  penalty: number
+  /** Show the green spots a picked-up stick can go to. */
+  hints: boolean
+  botSpeed: 'relaxed' | 'normal' | 'quick'
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  rounds: 3, handSize: 0, extraCards: -1, rotate: true, mirror: true, penalty: 1, hints: true, botSpeed: 'normal',
+}
+
+export const handSizeFor = (s: Settings, players: number): number => s.handSize || autoHandSize(players)
+
+/** Cards in the draw pile at the start of a round (after the pattern card and the deal). */
+export function deckFor(s: Settings, players: number): number {
+  const rest = DECK_SIZE - 1 - players * handSizeFor(s, players)
+  return s.extraCards < 0 ? rest : Math.min(rest, s.extraCards)
+}
 
 export interface Player {
   id: string
@@ -18,7 +47,12 @@ export interface Player {
   score: number
 }
 
+const handSize = (state: GameState): number => handSizeFor(state.settings, state.players.length)
+
 export interface GameState {
+  /** Turn number within the round, starting at 1; goes up only when a player ends their turn. */
+  turn: number
+  settings: Settings
   roundsTotal: number
   round: number
   players: Player[]
@@ -50,7 +84,7 @@ export type Action =
   | { type: 'endTurn'; playerId: string }
   | { type: 'nextRound'; playerId: string }
 
-export interface GameOptions {
+export interface GameOptions extends Partial<Settings> {
   rounds: number
   seed?: number
 }
@@ -74,6 +108,7 @@ function shuffle<T>(state: GameState, items: T[]): T[] {
 export function newGame(players: { id: string; name: string }[], opts: GameOptions): GameState {
   if (players.length < 1 || players.length > MAX_PLAYERS) throw new Error(`Matchstix needs 1–${MAX_PLAYERS} players`)
   const state: GameState = {
+    settings: { ...DEFAULT_SETTINGS, ...Object.fromEntries(Object.entries(opts).filter(([k]) => k !== 'seed')) },
     roundsTotal: Math.max(1, opts.rounds),
     round: 0,
     players: players.map((p) => ({ ...p, hand: [], pile: [], score: 0 })),
@@ -82,6 +117,7 @@ export function newGame(players: { id: string; name: string }[], opts: GameOptio
     current: 0,
     movesLeft: 1,
     turnMoved: false,
+    turn: 1,
     phase: 'playing',
     lastMove: null,
     moveCount: 0,
@@ -101,12 +137,15 @@ function startRound(state: GameState): void {
   const patternCard = state.deck.pop()!
   state.pattern = SHAPES[patternCard].map((s) => ({ ...s }))
   for (const p of state.players) {
-    p.hand = state.deck.splice(-handSize(state.players.length), handSize(state.players.length))
+    p.hand = state.deck.splice(-handSize(state), handSize(state))
     p.pile = []
   }
+  // Cards beyond the chosen deck size sit out this round.
+  state.deck.splice(0, Math.max(0, state.deck.length - deckFor(state.settings, state.players.length)))
   state.current = (state.round - 1) % state.players.length
   state.movesLeft = 1
   state.turnMoved = false
+  state.turn = 1
   state.phase = 'playing'
   state.lastMove = null
   state.lastPlayed = []
@@ -163,14 +202,15 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
   const n = state.players.length
   for (let k = 0; k < n; k++) {
     const p = state.players[(state.current + k) % n]
-    while (p.hand.length < handSize(n) && state.deck.length) p.hand.push(state.deck.pop()!)
+    while (p.hand.length < handSize(state) && state.deck.length) p.hand.push(state.deck.pop()!)
   }
-  if (state.players.some((p) => p.hand.length < handSize(n))) {
+  if (state.players.some((p) => p.hand.length < handSize(state))) {
     state.log.push('The deck ran out.')
     endRound(state)
     return
   }
   state.current = (state.current + 1) % n
+  state.turn += 1
   state.movesLeft = 1
   state.turnMoved = false
   state.lastPlayed = []
@@ -191,7 +231,7 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
   const ok = SHAPE_CANON[action.card] === canonical(state.pattern)
   state.lastClaim = { player: i, card: action.card, ok, seq: (state.lastClaim?.seq ?? 0) + 1 }
   if (!ok) {
-    p.score -= 1
+    p.score -= state.settings.penalty
     state.log.push(`${p.name} played a card that does not match (−1).`)
     return
   }

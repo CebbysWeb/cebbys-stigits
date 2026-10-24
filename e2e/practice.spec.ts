@@ -12,7 +12,7 @@ test('offline practice against three bots, seated around the table', async ({ br
   await page.click('[data-act=add-bot]')
   await page.click('[data-act=add-bot]')
   await expect(page.locator('.players li')).toHaveCount(4)
-  await page.selectOption('#rounds', '1')
+  await page.selectOption('[data-setting=rounds]', '1')
   await page.click('[data-act=start]')
 
   // Me at the bottom; the next three players in turn order sit left, top and right.
@@ -155,7 +155,7 @@ test('played cards fly from the hand that played them onto the pile', async ({ b
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage()
   await page.goto(BASE)
   await page.click('[data-act=practice]')
-  await page.selectOption('#rounds', '1')
+  await page.selectOption('[data-setting=rounds]', '1')
   await page.click('[data-act=start]')
   await page.waitForTimeout(700)
 
