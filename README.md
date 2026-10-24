@@ -1,6 +1,6 @@
 # Stigits
 
-A browser version of the matchstick card game **Matchstix** (Piatnik, Gerhard Kodys) for 2–4 friends.
+A browser version of the matchstick card game **Matchstix** (Piatnik, Gerhard Kodys) for up to 12 friends.
 
 **Play:** https://cebbysweb.github.io/cebbys-stigits/. Click **Host game**, send the link to your friends, and start.
 

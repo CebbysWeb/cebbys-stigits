@@ -3,11 +3,12 @@ import { allMoves, applyAction, findMatchingMove, matchingCard, newGame, type Ac
 
 const PEER_PREFIX = 'cebbys-stigits-'
 export const HOST_ID = 'host'
-export const MAX_PLAYERS = 4
+export { MAX_PLAYERS } from '../engine/game'
+import { MAX_PLAYERS } from '../engine/game'
 /** Code shown for an offline practice game, which has no peer to join. */
 export const LOCAL_CODE = 'LOCAL'
 const BOT_PREFIX = 'bot-'
-const BOT_NAMES = ['Robo Rita', 'Bolt', 'Sir Sparks', 'Gizmo']
+const BOT_NAMES = ['Robo Rita', 'Bolt', 'Sir Sparks', 'Gizmo', 'Widget', 'Cogsworth', 'Pixel', 'Dynamo', 'Ratchet', 'Sprocket', 'Volt']
 // Bots think a while before moving, leaving everyone time to spot the new shape.
 const BOT_MOVE_MS = [2000, 3500]
 // Bots spot a matching card after a human-ish pause, so people can beat them to it;
@@ -230,7 +231,7 @@ export class HostSession implements Session {
     } else if (this.snapshot.game) {
       return this.reject(conn, 'This game has already started.')
     } else if (this.snapshot.players.length >= MAX_PLAYERS) {
-      return this.reject(conn, 'This game is full (4 players).')
+      return this.reject(conn, `This game is full (${MAX_PLAYERS} players).`)
     } else {
       const name = String(msg.name || 'Player').slice(0, 20)
       this.snapshot.players.push({ id: msg.pid, name, connected: true })

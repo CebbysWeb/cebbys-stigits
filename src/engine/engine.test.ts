@@ -74,6 +74,17 @@ describe('legal moves', () => {
   })
 })
 
+describe('big games', () => {
+  it('deals smaller hands so up to 12 players fit the deck', () => {
+    for (const [n, size] of [[6, 5], [7, 4], [9, 4], [10, 3], [12, 3]]) {
+      const s = newGame(Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `P${i}` })), { rounds: 1, seed: 3 })
+      expect(s.players.every((p) => p.hand.length === size)).toBe(true)
+      expect(s.deck.length).toBe(DECK_SIZE - 1 - n * size)
+    }
+    expect(() => newGame(Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, name: `P${i}` })), { rounds: 1 })).toThrow()
+  })
+})
+
 describe('deck', () => {
   it('has the 55 distinct pentasticks', () => {
     expect(DECK_SIZE).toBe(55)

@@ -2,6 +2,10 @@ import { canonical, legalTargets, sameStick, type Stick } from './geometry'
 import { DECK_SIZE, SHAPES, SHAPE_CANON } from './shapes'
 
 export const HAND_SIZE = 5
+export const MAX_PLAYERS = 12
+
+/** Cards each player holds: fewer in big games so the 55-card deck still lasts. */
+export const handSize = (players: number): number => (players <= 6 ? HAND_SIZE : players <= 9 ? 4 : 3)
 
 export interface Player {
   id: string
@@ -68,7 +72,7 @@ function shuffle<T>(state: GameState, items: T[]): T[] {
 }
 
 export function newGame(players: { id: string; name: string }[], opts: GameOptions): GameState {
-  if (players.length < 1 || players.length > 4) throw new Error('Matchstix needs 1–4 players')
+  if (players.length < 1 || players.length > MAX_PLAYERS) throw new Error(`Matchstix needs 1–${MAX_PLAYERS} players`)
   const state: GameState = {
     roundsTotal: Math.max(1, opts.rounds),
     round: 0,
@@ -97,7 +101,7 @@ function startRound(state: GameState): void {
   const patternCard = state.deck.pop()!
   state.pattern = SHAPES[patternCard].map((s) => ({ ...s }))
   for (const p of state.players) {
-    p.hand = state.deck.splice(-HAND_SIZE, HAND_SIZE)
+    p.hand = state.deck.splice(-handSize(state.players.length), handSize(state.players.length))
     p.pile = []
   }
   state.current = (state.round - 1) % state.players.length
@@ -159,9 +163,9 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
   const n = state.players.length
   for (let k = 0; k < n; k++) {
     const p = state.players[(state.current + k) % n]
-    while (p.hand.length < HAND_SIZE && state.deck.length) p.hand.push(state.deck.pop()!)
+    while (p.hand.length < handSize(n) && state.deck.length) p.hand.push(state.deck.pop()!)
   }
-  if (state.players.some((p) => p.hand.length < HAND_SIZE)) {
+  if (state.players.some((p) => p.hand.length < handSize(n))) {
     state.log.push('The deck ran out.')
     endRound(state)
     return

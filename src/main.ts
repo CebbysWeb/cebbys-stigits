@@ -1,7 +1,7 @@
 import './style.css'
 import { legalTargets } from './engine/geometry'
 import { allMoves, findMatchingMove, matchingCard, winnerNames, type GameState } from './engine/game'
-import { ClientSession, HostSession, isBot, type Session, type Snapshot } from './net/session'
+import { ClientSession, HostSession, isBot, type Session, type Snapshot, MAX_PLAYERS } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
 import { PlayedPile } from './ui/pile'
@@ -24,7 +24,12 @@ function playCard(card: number): void {
 // Opponents' hands, smaller and not draggable, keyed by player id.
 const seatHands = new Map<string, HandView>()
 // Where opponents sit, by player count, in turn order after me.
-const SEAT_LAYOUT: Record<number, string[]> = { 1: [], 2: ['top'], 3: ['left', 'right'], 4: ['left', 'top', 'right'] }
+/** Opponents split across the left, top and right edges, in clockwise order. */
+function seatSides(k: number): string[] {
+  if (k <= 3) return [[], ['top'], ['left', 'right'], ['left', 'top', 'right']][k]
+  const side = Math.floor(k / 3)
+  return [...Array(side).fill('left'), ...Array(k - 2 * side).fill('top'), ...Array(side).fill('right')]
+}
 // The stick being dragged on the board, and the target it would snap to on release.
 let drag: { index: number; pointerId: number; targets: Stick[]; snap: number | null } | null = null
 let status = ''
@@ -146,7 +151,7 @@ function render(): void {
       if (!view) seatHands.set(p.id, (view = new HandView({ interactive: false, minCard: 30, maxCard: 46, faceDown: true })))
       // Side seats are rotated, so their fan runs along the seat's height.
       const side = holder.closest('.seat-left, .seat-right')
-      if (side) holder.style.width = `${side.clientHeight - 8}px`
+      if (side) holder.style.width = `${(side as HTMLElement).clientHeight - 8}px`
       holder.append(view.el)
       view.update(p.hand)
     }
@@ -191,7 +196,7 @@ function renderLobby(s: Snapshot): string {
     <section><h2>Players (${s.players.length}/4)</h2><ul class="players">${players.join('')}</ul></section>
     ${host ? `<section class="options">
       <label>Rounds <select id="rounds">${[1, 2, 3, 5, 7].map((n) => `<option ${n === s.rounds ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-      ${s.players.length < 4 ? '<button data-act="add-bot">Add a bot 🤖</button>' : ''}
+      ${s.players.length < MAX_PLAYERS ? '<button data-act="add-bot">Add a bot 🤖</button>' : ''}
       <button class="primary" data-act="start" ${s.players.length < 2 ? 'disabled' : ''}>Start game</button>
       ${s.players.length < 2 ? '<p class="hint">Waiting for a friend to join, or add a bot…</p>' : ''}
     </section>` : `<p class="status">Waiting for the host to start (${s.rounds} rounds)…</p>`}
@@ -212,7 +217,7 @@ function renderGame(s: Snapshot, g: GameState): string {
   const seat = (i: number) => {
     const p = g.players[i]
     const online = s.players.find((x) => x.id === p.id)?.connected !== false
-    const pos = i === me ? 'bottom' : SEAT_LAYOUT[g.players.length][(i - me + g.players.length) % g.players.length - 1]
+    const pos = i === me ? 'bottom' : seatSides(g.players.length - 1)[(i - me + g.players.length) % g.players.length - 1]
     return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
       <div class="seat-label"><b>${esc(p.name)}${i === me ? ' (you)' : ''}</b>${online ? '' : ' <span class="off">offline</span>'}
 </div>
@@ -240,7 +245,12 @@ function renderGame(s: Snapshot, g: GameState): string {
       }).join('')}</ol>
     </aside>
     <section class="table-layout">
-      ${g.players.map((_, i) => (i === me ? '' : seat(i))).join('')}
+      ${['left', 'top', 'right'].map((side) => {
+        const n = g.players.length
+        const mine = Array.from({ length: n - 1 }, (_, k) => (me + 1 + k) % n)
+          .filter((_, k) => seatSides(n - 1)[k] === side)
+        return mine.length ? `<div class="side side-${side}">${mine.map(seat).join('')}</div>` : ''
+      }).join('')}
       <div class="table">
         <p class="turn ${myTurn ? 'mine' : ''}">${turnText}</p>
         ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn }, camViewBox(g))}

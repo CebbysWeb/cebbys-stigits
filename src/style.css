@@ -147,15 +147,19 @@ body:has(.game) { background-color: var(--paper); }
 }
 .table-layout .table { grid-area: center; min-width: 0; }
 .seat { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
-.seat-top { grid-area: top; }
-.seat-left { grid-area: left; }
-.seat-right { grid-area: right; }
+.side { display: flex; gap: 8px; align-self: stretch; min-width: 0; min-height: 0; }
+.side-top { grid-area: top; justify-content: center; }
+.side-top .seat { flex: 0 1 320px; min-width: 0; }
+/* Clockwise from me: up the left edge, across the top, down the right. */
+.side-left { grid-area: left; flex-direction: column-reverse; }
+.side-right { grid-area: right; flex-direction: column; }
+.side-left .seat, .side-right .seat { flex: 1 1 0; min-height: 0; }
 .seat-bottom { grid-area: bottom; align-items: stretch; }
 .seat-label { font-size: 0.85rem; text-align: center; color: var(--muted); }
 .seat-label b { color: var(--ink); }
 .seat-label .meta { display: block; font-size: 0.75rem; }
 .seat.active .seat-label b { color: var(--accent); }
-.seat-top .seat-fan { width: min(320px, 70vw); transform: rotate(180deg); }
+.seat-top .seat-fan { width: 100%; max-width: min(320px, 70vw); transform: rotate(180deg); }
 .seat-left, .seat-right { width: 96px; align-self: stretch; position: relative; justify-content: center; }
 .seat-left .seat-fan, .seat-right .seat-fan { position: absolute; top: 50%; left: 50%; }
 .seat-left .seat-fan { transform: translate(-50%, -50%) rotate(90deg); }
