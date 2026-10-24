@@ -31,9 +31,6 @@
     --head: #ef4444;
     --ghost: #4ade80;
     --dot: #4a3f33;
-    --paper: #1e1e1e;
-    --grid-major: #4a4a4a;
-    --grid-minor: #2e2e2e;
     --card: #ffffff;
     --card-border: #f28c28;
   }
@@ -92,6 +89,7 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
 .grid-minor { stroke: var(--grid-minor); stroke-width: 0.012; fill: none; }
 /* Plain white paper behind the whole game screen. */
 body:has(.game) { background-color: var(--paper); }
+.card-grid { stroke: var(--grid-major); stroke-width: 0.03; fill: none; }
 .shaft { stroke: var(--stick, var(--wood)); stroke-width: 0.12; stroke-linecap: round; }
 .stick.moved .shaft { stroke: #f59e0b; }
 .stick.selected { opacity: 0.35; }

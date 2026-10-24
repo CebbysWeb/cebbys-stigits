@@ -21,18 +21,20 @@ export function stickSvg(s: Stick, attrs = ''): string {
 /** Each card's own stick colour: hues spread by the golden angle so neighbours differ. */
 export const cardColor = (card: number): string => `hsl(${Math.round((card * 137.508) % 360)} 70% 42%)`
 
-function viewBox(sticks: Stick[], pad: number): string {
-  const pts = sticks.flatMap(endpoints)
-  const xs = pts.map((p) => p.x)
-  const ys = pts.map((p) => -p.y)
-  const minX = Math.min(...xs) - pad
-  const minY = Math.min(...ys) - pad
-  return `${minX} ${minY} ${Math.max(...xs) + pad - minX} ${Math.max(...ys) + pad - minY}`
-}
+/** Every card uses the same scale: a fixed 6×6 window of lattice, big enough for any pentastick. */
+const CARD_SPAN = 6
 
 export function cardSvg(card: number): string {
   const shape = normalize(SHAPES[card])
-  return `<svg class="card-shape" viewBox="${viewBox(shape, 0.4)}" style="--stick: ${cardColor(card)}">${shape.map((s) => stickSvg(s)).join('')}</svg>`
+  const pts = shape.flatMap(endpoints)
+  // Centre the shape on whole lattice units so it sits on the card's grid lines.
+  const cx = Math.round((Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2)
+  const cy = Math.round((Math.min(...pts.map((p) => -p.y)) + Math.max(...pts.map((p) => -p.y))) / 2)
+  const x0 = cx - CARD_SPAN / 2
+  const y0 = cy - CARD_SPAN / 2
+  let grid = ''
+  for (let i = 0; i <= CARD_SPAN; i++) grid += `M${x0 + i} ${y0}V${y0 + CARD_SPAN}M${x0} ${y0 + i}H${x0 + CARD_SPAN}`
+  return `<svg class="card-shape" viewBox="${x0} ${y0} ${CARD_SPAN} ${CARD_SPAN}" style="--stick: ${cardColor(card)}"><path class="card-grid" d="${grid}"/>${shape.map((s) => stickSvg(s)).join('')}</svg>`
 }
 
 export interface BoardView {
