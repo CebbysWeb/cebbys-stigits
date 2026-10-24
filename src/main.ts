@@ -401,6 +401,7 @@ function renderGame(s: Snapshot, g: GameState): string {
     const out = g.settings.mode === 'emptyDeck' && g.pileLeft === 0 && p.hand.length === 0
     return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''} ${out ? 'out' : ''}">
       <div class="seat-label" style="--who: ${esc(p.color ?? 'var(--accent)')}">
+        ${i === g.current && turnEndsAt && g.phase === 'playing' ? `<span class="turn-timer" title="${t.timeLeft}">${TIMER_ICON}<b>${clock()}</b><i></i></span>` : ''}
         <b>${esc(p.name)}${i === me ? ` (${t.you})` : ''}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
         <span class="pts">${t.points(p.score)}</span>
         ${out ? `<span class="done-badge">${t.done}</span>` : ''}
@@ -424,7 +425,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       }).join('')}
       <div class="play-area"></div>
       <div class="table">
-        <p class="turn ${myTurn ? 'mine' : ''}">${turnText}${turnEndsAt && g.phase === 'playing' ? ` <span class="turn-timer" title="${t.timeLeft}">${clock()}</span>` : ''}${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
+        <p class="turn ${myTurn ? 'mine' : ''}">${turnText}${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
         ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn, hints: g.settings.hints, movable: (i) => canMove(g, i) }, camViewBox(g))}
       </div>
       ${seat(me)}
@@ -641,6 +642,9 @@ function placePiles(): void {
   drawPile.style.top = top
 }
 
+/** A stopwatch, shown with the turn countdown. */
+const TIMER_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5"/></svg>'
+
 /** Time left in the turn as m:ss. */
 function clock(): string {
   const left = Math.max(0, Math.ceil(((turnEndsAt ?? 0) - Date.now()) / 1000))
@@ -658,8 +662,12 @@ function tickTimer(): void {
     warned = Infinity
     return
   }
+  const digits = el.querySelector('b')!
   const text = clock()
-  if (el.textContent !== text) el.textContent = text
+  if (digits.textContent !== text) digits.textContent = text
+  // The bar drains with the time left.
+  const total = (snapshot?.game?.settings.turnLimit ?? 0) * 1000
+  if (total) el.style.setProperty('--left', String(Math.max(0, Math.min(1, (turnEndsAt - Date.now()) / total))))
   const left = Math.ceil((turnEndsAt - Date.now()) / 1000)
   el.classList.toggle('low', left <= 10)
   // A new turn starts the warnings afresh; otherwise warn once per mark as it passes.

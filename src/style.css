@@ -497,10 +497,19 @@ button.big { min-height: 56px; font-size: 1.1rem; }
 .resume-card { border-color: var(--accent); }
 .leave-btn { min-height: 36px; padding: 6px 14px; }
 
-/* Turn countdown beside the turn text; it turns red for the last ten seconds. */
-.turn-timer { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: #0f172a; color: #fff; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+/* Turn countdown: a bold pill floating just above the active player's name, with a draining bar. */
+.seat-label { position: relative; }
+.turn-timer {
+  position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); z-index: 3;
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px 8px; border-radius: 999px; overflow: hidden;
+  background: #0f172a; color: #fff; font-size: 1.15rem; box-shadow: 0 6px 18px rgb(15 23 42 / 0.3); pointer-events: none;
+}
+.turn-timer b { font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.turn-timer svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.turn-timer i { position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--left, 1) * 100%); background: var(--accent); transition: width 0.25s linear; }
 .turn-timer.low { background: #dc2626; animation: timer-pulse 1s ease-in-out infinite; }
-@keyframes timer-pulse { 50% { transform: scale(1.08); } }
+.turn-timer.low i { background: #fff; }
+@keyframes timer-pulse { 50% { transform: translateX(-50%) scale(1.1); } }
 
 /* Sound toggle sits beside the help button. */
 .sound-btn { left: 60px; display: grid; place-items: center; }
