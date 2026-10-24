@@ -12,6 +12,8 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 let session: Session | null = null
 let snapshot: Snapshot | null = null
 let selected: number | null = null
+/** Whether the controls help panel is open; kept across re-renders. */
+let helpOpen = false
 const pile = new PlayedPile()
 const hand = new HandView({ interactive: true, minCard: 76, maxCard: 140, onPlay: playCard })
 
@@ -221,6 +223,7 @@ function renderGame(s: Snapshot, g: GameState): string {
     return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
       <div class="seat-label"><b>${esc(p.name)}${i === me ? ' (you)' : ''}</b>${online ? '' : ' <span class="off">offline</span>'}
 </div>
+      ${i === me && myTurn ? '<button class="primary end-turn" data-act="end-turn">End turn</button>' : ''}
       ${i === me
         ? (p.hand.length ? '<div id="hand-slot"></div>' : '<p class="hint">No cards left!</p>')
         : `<div class="seat-fan" data-seat="${esc(p.id)}"></div>`}
@@ -257,9 +260,19 @@ function renderGame(s: Snapshot, g: GameState): string {
       </div>
       ${seat(me)}
       <div id="pile-slot"></div>
-      ${myTurn ? '<button class="primary end-turn" data-act="end-turn">End turn</button>' : ''}
     </section>
-    <p class="play-hint">Spot one of your shapes? Drag the card up to play it: +1 if it matches, −1 if not. While holding a card: R / E turn it, F mirrors it.</p>
+    <button class="help-btn" data-act="help" aria-label="Controls">?</button>
+    ${helpOpen ? `<div class="help-panel" role="dialog" aria-label="Controls">
+      <button class="help-close" data-act="help-close" aria-label="Close">×</button>
+      <h2>Controls</h2>
+      <ul>
+        <li><b>Move a stick:</b> drag it onto a green spot.</li>
+        <li><b>Play a card:</b> spot one of your shapes on the grid and drag the card up. +1 if it matches, −1 if not.</li>
+        <li><b>Turn a held card:</b> R clockwise, E counter-clockwise. <b>F</b> mirrors it.</li>
+        <li><b>Pan:</b> drag the empty grid.</li>
+        <li><b>Reorder:</b> drag cards sideways in your hand.</li>
+      </ul>
+    </div>` : ''}
     <details class="log"><summary>Game log</summary><ol>${g.log.slice(-30).reverse().map((l) => `<li>${esc(l)}</li>`).join('')}</ol></details>
     ${g.phase === 'playing' ? '' : renderRoundOver(g)}
   </main>`
@@ -285,6 +298,12 @@ app.addEventListener('click', async (e) => {
     case 'host': return connect('host')
     case 'join': return connect('join', el.dataset.code)
     case 'practice': return connect('practice')
+    case 'help':
+      helpOpen = !helpOpen
+      return render()
+    case 'help-close':
+      helpOpen = false
+      return render()
     case 'end-turn': return session!.send({ type: 'endTurn', playerId: session!.myId })
     case 'add-bot': return (session as HostSession).addBot()
     case 'remove': return (session as HostSession).removePlayer(el.dataset.id!)

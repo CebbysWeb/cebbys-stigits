@@ -186,7 +186,6 @@ body:has(.game) { background-color: var(--paper); }
   20%, 60% { translate: -8px; }
   40%, 80% { translate: 8px; }
 }
-.play-hint { position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0; font-size: 0.75rem; color: var(--muted); white-space: nowrap; pointer-events: none; }
 
 /* The shared pile of played cards, to the right of my hand. */
 .pile { position: fixed; right: 28px; bottom: 40px; width: 84px; height: 84px; z-index: 2; pointer-events: none; }
@@ -206,8 +205,35 @@ body:has(.game) { background-color: var(--paper); }
   .seat-bottom .fan { width: calc(100% - 76px); margin-right: 76px; }
 }
 
-.end-turn { position: fixed; right: 20px; bottom: 180px; z-index: 3; pointer-events: auto; pointer-events: auto; box-shadow: 0 4px 12px rgb(0 0 0 / 0.2); }
-@media (max-width: 560px) { .end-turn { right: 8px; bottom: 120px; padding: 8px 12px; } }
+/* End turn sits centred over my cards (the fan leaves room for the pile on its right). */
+/* It takes the place of my name label, so the hand never jumps when it appears. */
+.seat-bottom { position: relative; }
+.seat-bottom .end-turn {
+  position: absolute; top: -12px; left: calc((100% - 120px) / 2); translate: -50% 0;
+  pointer-events: auto; z-index: 5;
+}
+.seat-bottom:has(.end-turn) .seat-label { visibility: hidden; }
+@media (max-width: 560px) { .seat-bottom .end-turn { left: calc((100% - 76px) / 2); padding: 8px 14px; min-height: 38px; } }
+
+/* Controls help: a ? button top left that opens a small panel. */
+.help-btn {
+  position: fixed; left: 12px; top: 12px; z-index: 6; width: 40px; height: 40px; min-height: 0; padding: 0;
+  border-radius: 50%; font-weight: 700; font-size: 1.1rem; background: var(--glass);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: var(--shadow);
+}
+.help-panel {
+  position: fixed; left: 12px; top: 60px; z-index: 7; width: min(320px, calc(100vw - 24px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px 16px; box-shadow: 0 16px 40px rgb(15 23 42 / 0.18); font-size: 0.9rem;
+}
+.help-panel h2 { margin: 0 0 8px; color: var(--ink); }
+.help-panel ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+.help-panel b { color: var(--ink); }
+.help-close {
+  position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; min-height: 0; padding: 0;
+  border: none; background: none; font-size: 1.3rem; line-height: 1; color: var(--muted);
+}
+.help-close:hover:not(:disabled) { box-shadow: none; color: var(--ink); background: var(--line); }
 
 /* Back of another player's card: their shapes stay hidden. */
 .card-back {
