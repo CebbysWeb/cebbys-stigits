@@ -1,6 +1,6 @@
 import './style.css'
 import { legalTargets } from './engine/geometry'
-import { allMoves, findMatchingMove, winnerNames, type GameState } from './engine/game'
+import { allMoves, findMatchingMove, matchingCard, winnerNames, type GameState } from './engine/game'
 import { ClientSession, HostSession, isBot, type Session, type Snapshot } from './net/session'
 import { boardSvg, cardSvg, matchstick, midpoint } from './ui/svg'
 import { HandView } from './ui/hand'
@@ -11,7 +11,14 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 let session: Session | null = null
 let snapshot: Snapshot | null = null
 let selected: number | null = null
-const hand = new HandView()
+const hand = new HandView({ interactive: true, minCard: 64, maxCard: 110, onPlay: playCard })
+
+/** Call a card: it scores if it matches the grid right now, and costs a point if not. */
+function playCard(card: number): void {
+  const g = snapshot?.game
+  if (!g || !session || g.phase !== 'playing') return
+  session.send({ type: 'claim', playerId: session.myId, card, seen: g.moveCount })
+}
 // Opponents' hands, smaller and not draggable, keyed by player id.
 const seatHands = new Map<string, HandView>()
 // Where opponents sit, by player count, in turn order after me.
@@ -57,7 +64,15 @@ function toast(message: string): void {
 const events = {
   onSnapshot(s: Snapshot) {
     const prevMove = snapshot?.game?.lastMove
+    const prevClaim = snapshot?.game?.lastClaim?.seq
     snapshot = s
+    const c = s.game?.lastClaim
+    if (c && c.seq !== prevClaim && s.game) {
+      const who = s.game.players[c.player]
+      const mine = who.id === session?.myId
+      toast(c.ok ? `${mine ? 'Match! ' : `${who.name} matched! `}+1` : `${mine ? 'Not a match' : `${who.name} missed`} −1`)
+      if (mine && !c.ok) hand.flash(c.card, 'wrong')
+    }
     if (s.game?.lastMove !== prevMove) selected = null
     // Rebuilding the board mid-drag would drop the stick; endDrag renders instead.
     if (!drag) render()
@@ -136,12 +151,11 @@ function renderHome(): string {
          <button data-act="practice">Practice vs bots (offline)</button>
          <div class="row"><input id="code" maxlength="5" placeholder="CODE"/><button data-act="join-code">Join</button></div>`}
     <details class="rules"><summary>How to play</summary>
-      <p>On your turn move <b>one</b> stick to a new spot. It must touch the others so the pattern stays in one piece.
-      If the sticks now form the shape on one of your cards (rotated or mirrored counts), that card is played.</p>
-      <p><b>Standard:</b> anyone holding the new shape plays one card; if you didn't match, you draw.
-      First to an empty hand ends the round; everyone else gets −1 per card left.</p>
-      <p><b>Plus:</b> each match gives you another move. Refill to 5 at the end of your turn.
-      When someone can't refill, the round ends and each played card is worth +1.</p>
+      <p>On your turn move <b>one</b> stick to a new spot. It must touch the others so the pattern stays in one piece.</p>
+      <p>Spot the shape on one of your cards on the grid (rotated or mirrored counts)? Drag that card up onto the
+      board to play it, at any time, even on someone else's turn. A match scores <b>+1</b>; a wrong call costs <b>−1</b>.</p>
+      <p><b>Standard:</b> first to an empty hand ends the round; everyone else gets −1 per card left.</p>
+      <p><b>Plus:</b> each played card is replaced from the deck. The round ends when the deck runs out.</p>
     </details>
   </main>`
 }
@@ -179,7 +193,7 @@ function renderGame(s: Snapshot, g: GameState): string {
   const turnText = g.phase !== 'playing' ? 'Round over'
     : myTurn ? (selected === null ? 'Your turn — drag a stick to a new spot' : 'Drop it on a green spot')
     : `${esc(g.players[g.current].name)} is moving…`
-  const scoreLabel = g.variant === 'plus' ? 'pts' : 'minus'
+  const scoreLabel = 'pts'
 
   // Seats follow turn order clockwise from me: the next player sits on my left.
   const seat = (i: number) => {
@@ -211,6 +225,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       </div>
       ${seat(me)}
     </section>
+    <p class="play-hint">Spot one of your shapes? Drag the card up to play it: +1 if it matches, −1 if not. While holding a card: R / E turn it, F mirrors it.</p>
     <details class="log"><summary>Game log</summary><ol>${g.log.slice(-30).reverse().map((l) => `<li>${esc(l)}</li>`).join('')}</ol></details>
     ${g.phase === 'playing' ? '' : renderRoundOver(g)}
   </main>`
@@ -264,7 +279,8 @@ app.addEventListener('click', async (e) => {
 
 // Board camera, in SVG units (y down). The view drifts back to the sticks'
 // centre of mass unless the player is panning or has just let go.
-const BOARD_ASPECT = 0.75
+// The board fills the screen, so the view takes the window's shape.
+const boardAspect = () => window.innerHeight / Math.max(1, window.innerWidth)
 const RECENTER_DELAY_MS = 900
 const RECENTER_SECONDS = 1.2
 const cam = { x: 0, y: 0, w: 8, ready: false, idleSince: 0 }
@@ -276,8 +292,8 @@ function camTarget(g: GameState): { x: number; y: number; w: number } {
   const y = -mids.reduce((a, m) => a + m.y, 0) / mids.length
   const xs = mids.map((m) => m.x)
   const ys = mids.map((m) => m.y)
-  // Fit the pattern plus room for any target around it.
-  const w = Math.max(8, Math.max(...xs) - Math.min(...xs) + 4, (Math.max(...ys) - Math.min(...ys) + 4) / BOARD_ASPECT)
+  // Fit the pattern plus room for targets and the seats drawn over the edges.
+  const w = Math.max(9, Math.max(...xs) - Math.min(...xs) + 6, (Math.max(...ys) - Math.min(...ys) + 7) / boardAspect())
   return { x, y, w }
 }
 
@@ -286,7 +302,7 @@ function camViewBox(g: GameState): string {
     Object.assign(cam, camTarget(g))
     cam.ready = true
   }
-  const h = cam.w * BOARD_ASPECT
+  const h = cam.w * boardAspect()
   return `${cam.x - cam.w / 2} ${cam.y - h / 2} ${cam.w} ${h}`
 }
 
@@ -312,13 +328,15 @@ requestAnimationFrame(frame)
 // Panning: drag anywhere on the board that is not a movable stick.
 app.addEventListener('pointerdown', (e) => {
   const board = (e.target as Element).closest<SVGSVGElement>('.board')
-  if (!board || drag || pan || (e.target as Element).closest('.hit[data-stick]')) return
+  if (!board || drag || pan || e.button !== 0 || (e.target as Element).closest('.hit[data-stick]')) return
+  e.preventDefault() // no text selection or native drag while panning
   pan = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, camX: cam.x, camY: cam.y }
   board.setPointerCapture(e.pointerId)
   board.classList.add('panning')
 })
-app.addEventListener('pointermove', (e) => {
+window.addEventListener('pointermove', (e) => {
   if (!pan || e.pointerId !== pan.pointerId) return
+  if (e.buttons === 0) return endPan(e) // released somewhere we never heard about
   const board = app.querySelector<SVGSVGElement>('.board')
   const g = snapshot?.game
   if (!board || !g) return
@@ -335,8 +353,8 @@ const endPan = (e: PointerEvent) => {
   cam.idleSince = performance.now()
   app.querySelector('.board')?.classList.remove('panning')
 }
-app.addEventListener('pointerup', endPan)
-app.addEventListener('pointercancel', endPan)
+window.addEventListener('pointerup', endPan)
+window.addEventListener('pointercancel', endPan)
 
 // Drag and drop on the board: grab a stick, it follows the pointer, and it snaps
 // to the nearest legal spot. Releasing away from every spot puts it back.
@@ -350,7 +368,7 @@ function isMyTurn(): boolean {
 app.addEventListener('pointerdown', (e) => {
   const hit = (e.target as Element).closest<SVGElement>('.hit[data-stick]')
   const g = snapshot?.game
-  if (!hit || !g || !isMyTurn() || drag) return
+  if (!hit || !g || !isMyTurn() || drag || e.button !== 0) return
   const index = Number(hit.dataset.stick)
   const targets = legalTargets(g.pattern, index)
   if (!targets.length) {
@@ -367,8 +385,9 @@ app.addEventListener('pointerdown', (e) => {
   updateDrag(board, e)
 })
 
-app.addEventListener('pointermove', (e) => {
+window.addEventListener('pointermove', (e) => {
   if (!drag || e.pointerId !== drag.pointerId) return
+  if (e.buttons === 0) return endDrag(e, true)
   const board = app.querySelector<SVGSVGElement>('.board')
   if (board) updateDrag(board, e)
 })
@@ -412,8 +431,8 @@ function endDrag(e: PointerEvent, commit: boolean): void {
   render()
 }
 
-app.addEventListener('pointerup', (e) => endDrag(e, true))
-app.addEventListener('pointercancel', (e) => endDrag(e, false))
+window.addEventListener('pointerup', (e) => endDrag(e, true))
+window.addEventListener('pointercancel', (e) => endDrag(e, false))
 
 app.addEventListener('change', (e) => {
   if (!(session instanceof HostSession)) return
@@ -432,12 +451,32 @@ window.addEventListener('beforeunload', (e) => {
 // Test hook: plays a move for the local player (matching if possible).
 declare global {
   interface Window {
-    __stigits?: { snapshot: () => Snapshot | null; myId: () => string | null; handOrder: () => number[]; autoMove: () => boolean }
+    __stigits?: {
+      snapshot: () => Snapshot | null
+      myId: () => string | null
+      handOrder: () => number[]
+      autoMove: () => boolean
+      autoClaim: () => boolean
+      matches: (card: number) => boolean
+    }
   }
 }
 window.__stigits = {
   snapshot: () => snapshot,
   myId: () => session?.myId ?? null,
+  matches: (card: number) => {
+    const g = snapshot?.game
+    return !!g && matchingCard([card], g.pattern) === 0
+  },
+  autoClaim: () => {
+    const g = snapshot?.game
+    const me = g?.players.find((p) => p.id === session?.myId)
+    if (!g || !me || g.phase !== 'playing') return false
+    const h = matchingCard(me.hand, g.pattern)
+    if (h < 0) return false
+    playCard(me.hand[h])
+    return true
+  },
   handOrder: () => hand.cardOrder,
   autoMove: () => {
     const g = snapshot?.game

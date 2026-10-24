@@ -1,33 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-
-const center = async (p: Page, selector: string) => {
-  const r = await p.locator(selector).evaluate((el) => {
-    const b = el.getBoundingClientRect()
-    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
-  })
-  return r
-}
-
-/** Press on a movable stick, drag it to the first highlighted spot and release. */
-async function dragStick(p: Page): Promise<void> {
-  await p.locator('.hit[data-stick]').first().waitFor({ state: 'attached' })
-  const count = await p.locator('.hit[data-stick]').count()
-  for (let i = 0; i < count; i++) {
-    const from = await center(p, `.hit[data-stick="${i}"]`)
-    await p.mouse.move(from.x, from.y)
-    await p.mouse.down()
-    if (await p.locator('.ghost').count()) {
-      const to = await center(p, '.ghost[data-ghost="0"]')
-      await p.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 })
-      await p.mouse.move(to.x, to.y, { steps: 4 })
-      await expect(p.locator('.ghost.hot')).toHaveCount(1)
-      await p.mouse.up()
-      return
-    }
-    await p.mouse.up()
-  }
-  throw new Error('No movable stick')
-}
+import { center, dragStick } from './helpers'
 
 // Two isolated browser contexts play a whole game over PeerJS/WebRTC.
 // Needs internet access for the public PeerJS signaling server.
@@ -85,9 +57,9 @@ for (const variant of ['standard', 'plus'] as const) {
       return Math.hypot(x + w / 2 - cx, y + h / 2 - cy)
     })
     const box = (await host.locator('.board').boundingBox())!
-    await host.mouse.move(box.x + 12, box.y + 12)
+    await host.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.45)
     await host.mouse.down()
-    await host.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4, { steps: 6 })
+    await host.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.6, { steps: 6 })
     const panned = await offCentre()
     expect(panned).toBeGreaterThan(0.5)
     await host.screenshot({ path: `e2e/results/${variant}-host-panned.png` })
@@ -111,7 +83,9 @@ for (const variant of ['standard', 'plus'] as const) {
         await host.click('[data-act=next]')
         continue
       }
-      const moved = (await host.evaluate(() => window.__stigits!.autoMove())) ||
+      const claimed = (await host.evaluate(() => window.__stigits!.autoClaim())) ||
+        (await guest.evaluate(() => window.__stigits!.autoClaim()))
+      const moved = claimed || (await host.evaluate(() => window.__stigits!.autoMove())) ||
         (await guest.evaluate(() => window.__stigits!.autoMove()))
       if (moved) await host.waitForTimeout(15)
       else await host.waitForTimeout(50)
@@ -148,6 +122,7 @@ test('four players join and finish a game', async ({ browser }) => {
   const phase = () => host.evaluate(() => window.__stigits!.snapshot()?.game?.phase)
   for (let i = 0; i < 4000 && (await phase()) !== 'gameOver'; i++) {
     let moved = false
+    for (const p of pages) if (!moved) moved = await p.evaluate(() => window.__stigits!.autoClaim())
     for (const p of pages) if (!moved) moved = await p.evaluate(() => window.__stigits!.autoMove())
     await host.waitForTimeout(moved ? 15 : 50)
   }

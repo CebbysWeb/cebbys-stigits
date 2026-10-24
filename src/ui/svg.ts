@@ -35,13 +35,19 @@ export interface BoardView {
   interactive: boolean
 }
 
-/** An endless dot grid: a pattern tile repeated over a plane far larger than any view. */
-const GRID = `<defs><pattern id="grid-dots" width="1" height="1" x="-0.5" y="-0.5" patternUnits="userSpaceOnUse">
-  <circle class="dot" cx="0.5" cy="0.5" r="0.04"/></pattern></defs>
-  <rect x="-500" y="-500" width="1000" height="1000" fill="url(#grid-dots)"/>`
+/**
+ * Endless squared exercise-book paper: one tile per lattice unit, repeated over a
+ * plane far larger than any view. Main lines sit on the lattice where sticks lie;
+ * fainter lines split each square in four. The tile is offset by half a unit so
+ * each line is drawn whole rather than split across tile edges.
+ */
+const GRID = `<defs><pattern id="grid-paper" width="1" height="1" x="-0.5" y="-0.5" patternUnits="userSpaceOnUse">
+  <path class="grid-minor" d="M0 0V1M1 0V1M0 0H1M0 1H1"/>
+  <path class="grid-major" d="M0.5 0V1M0 0.5H1"/></pattern></defs>
+  <rect x="-500" y="-500" width="1000" height="1000" fill="url(#grid-paper)"/>`
 
 export function boardSvg(v: BoardView, vb: string): string {
-  const dots = [GRID]
+  const grid = GRID
 
   const sticks = v.pattern.map((s, i) => {
     const cls = ['stick', i === v.selected ? 'selected' : '', v.interactive ? 'pickable' : '',
@@ -50,7 +56,7 @@ export function boardSvg(v: BoardView, vb: string): string {
       (v.interactive ? line(s, `class="hit" data-stick="${i}"`) : '')
   })
   const targets = v.targets.map((t, i) => line(t, `class="ghost" data-ghost="${i}"`))
-  return `<svg class="board ${v.interactive ? 'interactive' : ''}" viewBox="${vb}">${dots.join('')}${targets.join('')}${sticks.join('')}<g class="drag-layer"></g></svg>`
+  return `<svg class="board ${v.interactive ? 'interactive' : ''}" viewBox="${vb}">${grid}${targets.join('')}${sticks.join('')}<g class="drag-layer"></g></svg>`
 }
 
 /** Midpoint of a stick in lattice coordinates, for snapping a dragged stick. */

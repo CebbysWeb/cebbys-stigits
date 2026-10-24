@@ -10,6 +10,9 @@
   --head: #b91c1c;
   --ghost: #16a34a;
   --dot: #cdbfa8;
+  --paper: #fbfaf3;
+  --grid-major: rgb(70 130 190 / 0.42);
+  --grid-minor: rgb(70 130 190 / 0.2);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -26,6 +29,9 @@
     --head: #ef4444;
     --ghost: #4ade80;
     --dot: #4a3f33;
+    --paper: #1d2228;
+    --grid-major: rgb(120 170 220 / 0.3);
+    --grid-minor: rgb(120 170 220 / 0.13);
   }
 }
 
@@ -59,20 +65,32 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
 .players { margin: 0; padding-left: 20px; line-height: 1.8; }
 .options { display: flex; flex-direction: column; gap: 12px; }
 
-.game { display: flex; flex-direction: column; gap: 12px; }
+.game { position: relative; height: 100dvh; overflow: hidden; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.game svg { -webkit-user-drag: none; }
+.game header { position: relative; z-index: 2; padding: 12px 16px 0; pointer-events: none; }
 .game header { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.9rem; flex-wrap: wrap; gap: 8px; }
-.table { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px; text-align: center; }
-.turn { margin: 0 0 8px; font-weight: 600; color: var(--muted); }
+/* The board is a borderless layer filling the whole screen; everything else floats over it. */
+.table { position: fixed; inset: 0; z-index: 0; pointer-events: auto; }
+.turn {
+  position: fixed; top: 54px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
+  font-weight: 600; color: var(--muted); white-space: nowrap; pointer-events: none;
+}
 .turn.mine { color: var(--accent); }
 .board {
-  width: 100%; aspect-ratio: 4 / 3; max-height: 46vh; display: block; margin: 0 auto;
+  width: 100vw; height: 100dvh; display: block;
   touch-action: none; cursor: grab;
   /* Fade the endless grid out towards the edges. */
-  -webkit-mask-image: radial-gradient(ellipse 50% 50% at center, #000 55%, transparent 100%);
-  mask-image: radial-gradient(ellipse 50% 50% at center, #000 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at center, #000 65%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at center, #000 65%, transparent 100%);
 }
 .board.panning { cursor: grabbing; }
-.dot { fill: var(--dot); }
+.grid-major { stroke: var(--grid-major); stroke-width: 0.022; fill: none; }
+.grid-minor { stroke: var(--grid-minor); stroke-width: 0.012; fill: none; }
+/* Exercise-book paper with a faint grain, behind the whole game screen. */
+body:has(.game) {
+  background-color: var(--paper);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.4 0 0 0 0 0.3 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 .shaft { stroke: var(--wood); stroke-width: 0.12; stroke-linecap: round; }
 .head { fill: var(--head); }
 .stick.moved .shaft { stroke: #f59e0b; }
@@ -85,30 +103,30 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
 .stick.held { pointer-events: none; filter: drop-shadow(0 0.08px 0.08px rgb(0 0 0 / 0.4)); }
 .stick.held .shaft { stroke-width: 0.15; }
 .stick.held.snapped .shaft { stroke: #f59e0b; }
-.last { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 0.85rem; }
+.last { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 2; pointer-events: none; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 0.85rem; }
 .last .card { width: 64px; }
 
 .fan { position: relative; width: 100%; user-select: none; -webkit-user-select: none; }
 .hand-card {
-  position: absolute; left: 0; top: 0; aspect-ratio: 3 / 4; padding: 8px;
+  position: absolute; left: 0; top: 0; aspect-ratio: 1; padding: 8px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.12); transform-origin: 50% 120%;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.12); transform-origin: 50% 140%;
   transition: transform 0.28s cubic-bezier(.2,.8,.3,1.1), opacity 0.28s, box-shadow 0.2s;
   touch-action: none; cursor: grab;
 }
-.hand-card .card-shape { width: 100%; height: 100%; pointer-events: none; }
+.hand-card .card-shape { width: 100%; height: 100%; pointer-events: none; transition: transform 0.22s ease; }
 .hand-card.entering { opacity: 0; }
 .hand-card.leaving { opacity: 0; pointer-events: none; transform: translateY(-120px) scale(0.7) !important; }
 .hand-card.dragging { transition: box-shadow 0.2s; cursor: grabbing; box-shadow: 0 10px 24px rgb(0 0 0 / 0.25); }
 @media (hover: hover) {
   .hand-card:not(.dragging):hover { box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); border-color: var(--accent); }
 }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px; aspect-ratio: 3 / 4; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .card .card-shape { width: 100%; height: 100%; }
 .card.played { border-color: var(--accent); aspect-ratio: auto; }
 .card.played span { font-size: 0.75rem; }
 
-.log { color: var(--muted); font-size: 0.85rem; }
+.log { color: var(--muted); font-size: 0.85rem; position: fixed; left: 12px; bottom: 8px; z-index: 3; max-height: 40vh; overflow: auto; background: color-mix(in srgb, var(--bg) 85%, transparent); border-radius: 8px; padding: 2px 6px; }
 .log ol { padding-left: 20px; margin: 6px 0; }
 
 .overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; padding: 16px; z-index: 10; }
@@ -126,6 +144,8 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
 
 /* The table: me at the bottom, opponents around the edges in turn order. */
 .table-layout {
+  position: fixed; inset: 0; z-index: 1; padding: 82px 12px 28px; pointer-events: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   display: grid; gap: 8px; align-items: center;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: ". top ." "left center right" "bottom bottom bottom";
@@ -153,3 +173,18 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
   .seat-left, .seat-right { width: 64px; }
   .seat-label { font-size: 0.75rem; }
 }
+
+/* Only my own hand takes input over the board; the rest of the overlay lets drags through to it. */
+.seat.me .fan { pointer-events: auto; }
+.seat-label { background: color-mix(in srgb, var(--bg) 70%, transparent); border-radius: 8px; padding: 2px 8px; }
+.seat-bottom .seat-label { align-self: center; }
+
+/* Dragging a card up far enough to play it, and the shake after a wrong call. */
+.hand-card.will-play { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent), 0 12px 28px rgb(0 0 0 / 0.3); }
+.hand-card.wrong { animation: wrong 0.5s; border-color: var(--head); }
+@keyframes wrong {
+  0%, 100% { translate: 0; }
+  20%, 60% { translate: -8px; }
+  40%, 80% { translate: 8px; }
+}
+.play-hint { position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0; font-size: 0.75rem; color: var(--muted); white-space: nowrap; pointer-events: none; }

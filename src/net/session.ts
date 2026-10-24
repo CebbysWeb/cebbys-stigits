@@ -1,5 +1,5 @@
 import Peer, { type DataConnection } from 'peerjs'
-import { allMoves, applyAction, findMatchingMove, newGame, type Action, type GameState, type Variant } from '../engine/game'
+import { allMoves, applyAction, findMatchingMove, matchingCard, newGame, type Action, type GameState, type Variant } from '../engine/game'
 
 const PEER_PREFIX = 'cebbys-stigits-'
 export const HOST_ID = 'host'
@@ -8,7 +8,13 @@ export const MAX_PLAYERS = 4
 export const LOCAL_CODE = 'LOCAL'
 const BOT_PREFIX = 'bot-'
 const BOT_NAMES = ['Robo Rita', 'Bolt', 'Sir Sparks', 'Gizmo']
-const BOT_DELAY_MS = 900
+// Bots think a while before moving, leaving everyone time to spot the new shape.
+const BOT_MOVE_MS = [2000, 3500]
+// Bots spot a matching card after a human-ish pause, so people can beat them to it;
+// a bot that just made its own shape knows it and calls it quickly.
+const BOT_SPOT_MS = [1500, 3500]
+const BOT_OWN_SHAPE_MS = [400, 900]
+const between = ([min, max]: number[]) => min + Math.random() * (max - min)
 export const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX)
 
 export interface LobbyPlayer {
@@ -94,6 +100,7 @@ export class HostSession implements Session {
   private peer: Peer | null
   private events: SessionEvents
   private botTimer = 0
+  private botClaims = new Map<string, number>()
 
   private constructor(peer: Peer | null, code: string, name: string, events: SessionEvents) {
     this.peer = peer
@@ -148,7 +155,31 @@ export class HostSession implements Session {
       const moves = allMoves(game)
       const move = findMatchingMove(game) ?? moves[Math.floor(Math.random() * moves.length)]
       this.handle({ type: 'move', playerId: bot.id, ...move })
-    }, BOT_DELAY_MS)
+    }, between(BOT_MOVE_MS))
+  }
+
+  // Any bot holding the shape on the grid calls it after a pause, if still valid then.
+  private scheduleBotClaims(): void {
+    const g = this.snapshot.game
+    if (!g || g.phase !== 'playing') return
+    const mover = g.lastMove ? g.players[(g.current - 1 + g.players.length) % g.players.length].id : null
+    for (const bot of g.players) {
+      if (!isBot(bot.id) || this.botClaims.has(bot.id)) continue
+      const h = matchingCard(bot.hand, g.pattern)
+      if (h < 0) continue
+      const card = bot.hand[h]
+      const seen = g.moveCount
+      const delay = between(bot.id === mover ? BOT_OWN_SHAPE_MS : BOT_SPOT_MS)
+      this.botClaims.set(bot.id, window.setTimeout(() => {
+        this.botClaims.delete(bot.id)
+        const now = this.snapshot.game
+        if (now && now.phase === 'playing' && now.moveCount === seen) {
+          const me = now.players.find((p) => p.id === bot.id)
+          if (me?.hand.includes(card)) this.handle({ type: 'claim', playerId: bot.id, card, seen })
+        }
+        this.scheduleBotClaims()
+      }, delay))
+    }
   }
 
   static async create(name: string, events: SessionEvents): Promise<HostSession> {
@@ -249,10 +280,12 @@ export class HostSession implements Session {
     for (const c of this.conns.values()) if (c.open) c.send(msg)
     this.events.onSnapshot(structuredClone(this.snapshot))
     this.scheduleBot()
+    this.scheduleBotClaims()
   }
 
   destroy(): void {
     clearTimeout(this.botTimer)
+    for (const t of this.botClaims.values()) clearTimeout(t)
     this.peer?.destroy()
   }
 }

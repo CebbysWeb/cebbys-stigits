@@ -9,9 +9,9 @@ export interface Player {
   name: string
   /** Card (shape) indices in hand. */
   hand: number[]
-  /** Cards played this round (Plus variant scoring). */
+  /** Cards correctly played this round. */
   pile: number[]
-  /** Cumulative score: minus points in Standard, plus points in Plus. */
+  /** Cumulative score: +1 per correct play, −1 per wrong one (and per card left in Standard). */
   score: number
 }
 
@@ -25,7 +25,11 @@ export interface GameState {
   current: number
   phase: 'playing' | 'roundOver' | 'gameOver'
   lastMove: { from: Stick; to: Stick } | null
-  /** Cards matched by the last move, for UI highlighting. */
+  /** Counts moves; a claim names the move it saw so a stale claim is not penalised. */
+  moveCount: number
+  /** The most recent claim, for UI feedback. */
+  lastClaim: { player: number; card: number; ok: boolean; seq: number } | null
+  /** Cards correctly played since the last move, for UI highlighting. */
   lastPlayed: { player: number; card: number }[]
   log: string[]
   rng: number
@@ -33,6 +37,7 @@ export interface GameState {
 
 export type Action =
   | { type: 'move'; playerId: string; index: number; to: Stick }
+  | { type: 'claim'; playerId: string; card: number; seen: number }
   | { type: 'nextRound'; playerId: string }
 
 export interface GameOptions {
@@ -69,6 +74,8 @@ export function newGame(players: { id: string; name: string }[], opts: GameOptio
     current: 0,
     phase: 'playing',
     lastMove: null,
+    moveCount: 0,
+    lastClaim: null,
     lastPlayed: [],
     log: [],
     rng: opts.seed ?? Math.floor(Math.random() * 2 ** 31),
@@ -106,8 +113,15 @@ export function applyAction(prev: GameState, action: Action): GameState {
     startRound(state)
     return state
   }
-
   if (state.phase !== 'playing') throw new Error('The round is over')
+  if (action.type === 'claim') claim(state, action)
+  else move(state, action)
+  return state
+}
+
+// On your turn you move one stick; the turn then passes on. Nothing is matched
+// automatically: players claim matches themselves.
+function move(state: GameState, action: Extract<Action, { type: 'move' }>): void {
   const me = state.players[state.current]
   if (me.id !== action.playerId) throw new Error(`It is ${me.name}'s turn`)
   if (!Number.isInteger(action.index) || action.index < 0 || action.index >= state.pattern.length)
@@ -120,66 +134,45 @@ export function applyAction(prev: GameState, action: Action): GameState {
   state.pattern[action.index] = { x: to.x, y: to.y, d: to.d }
   state.lastMove = { from, to: state.pattern[action.index] }
   state.lastPlayed = []
-
-  if (state.variant === 'standard') resolveStandard(state)
-  else resolvePlus(state)
-  return state
+  state.moveCount += 1
+  state.current = (state.current + 1) % state.players.length
 }
 
-function playCard(state: GameState, playerIndex: number, handIndex: number, toPile: boolean): void {
-  const p = state.players[playerIndex]
-  const [card] = p.hand.splice(handIndex, 1)
-  if (toPile) p.pile.push(card)
-  state.lastPlayed.push({ player: playerIndex, card })
-  state.log.push(`${p.name} matched a card.`)
-}
+// Any player may play a card at any time. A match scores +1; a wrong call costs 1
+// and the card stays in hand. A claim made before the latest move is refused
+// without penalty, since the player could not have seen the new pattern.
+function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): void {
+  const i = state.players.findIndex((p) => p.id === action.playerId)
+  const p = state.players[i]
+  if (!p) throw new Error('Unknown player')
+  const h = p.hand.indexOf(action.card)
+  if (h < 0) throw new Error('That card is not in your hand')
+  if (action.seen !== state.moveCount) throw new Error('Too late — the pattern just changed')
 
-// Standard: the mover and anyone else holding a match lay down one card each.
-// The mover draws if they could not match. First to an empty hand ends the round.
-function resolveStandard(state: GameState): void {
-  const n = state.players.length
-  let moverMatched = false
-  for (let k = 0; k < n; k++) {
-    const i = (state.current + k) % n
-    const h = matchingCard(state.players[i].hand, state.pattern)
-    if (h >= 0) {
-      playCard(state, i, h, false)
-      if (k === 0) moverMatched = true
+  const ok = SHAPE_CANON[action.card] === canonical(state.pattern)
+  state.lastClaim = { player: i, card: action.card, ok, seq: (state.lastClaim?.seq ?? 0) + 1 }
+  if (!ok) {
+    p.score -= 1
+    state.log.push(`${p.name} played a card that does not match (−1).`)
+    return
+  }
+  p.hand.splice(h, 1)
+  p.pile.push(action.card)
+  p.score += 1
+  state.lastPlayed.push({ player: i, card: action.card })
+  state.log.push(`${p.name} matched a card (+1).`)
+
+  if (state.variant === 'standard') {
+    if (p.hand.length === 0) {
+      for (const q of state.players) q.score -= q.hand.length
+      state.log.push(`${p.name} emptied their hand!`)
+      endRound(state)
     }
-  }
-  const mover = state.players[state.current]
-  if (!moverMatched && state.deck.length) {
-    mover.hand.push(state.deck.pop()!)
-    state.log.push(`${mover.name} drew a card.`)
-  }
-
-  if (state.players.some((p) => p.hand.length === 0)) {
-    const winners = state.players.filter((p) => p.hand.length === 0).map((p) => p.name)
-    for (const p of state.players) p.score -= p.hand.length
-    state.log.push(`${winners.join(' & ')} emptied their hand!`)
-    endRound(state)
+  } else if (state.deck.length) {
+    p.hand.push(state.deck.pop()!)
   } else {
-    state.current = (state.current + 1) % n
-  }
-}
-
-// Plus: each match by the mover gives another move. The turn ends on a move
-// without a match (or an empty hand); the mover refills to five. A player who
-// cannot refill ends the round and everyone scores their played pile.
-function resolvePlus(state: GameState): void {
-  const mover = state.players[state.current]
-  const h = matchingCard(mover.hand, state.pattern)
-  if (h >= 0) {
-    playCard(state, state.current, h, true)
-    if (mover.hand.length > 0) return // extra move
-  }
-  while (mover.hand.length < HAND_SIZE && state.deck.length) mover.hand.push(state.deck.pop()!)
-  if (mover.hand.length < HAND_SIZE) {
-    state.log.push(`${mover.name} cannot refill to ${HAND_SIZE} cards.`)
-    for (const p of state.players) p.score += p.pile.length
+    state.log.push('The deck is empty.')
     endRound(state)
-  } else {
-    state.current = (state.current + 1) % state.players.length
   }
 }
 
@@ -188,7 +181,7 @@ function endRound(state: GameState): void {
   if (state.phase === 'gameOver') state.log.push(`Game over! ${winnerNames(state).join(' & ')} wins.`)
 }
 
-/** Best cumulative score: fewest minus points (Standard) or most points (Plus). */
+/** Highest cumulative score. */
 export function winnerNames(state: GameState): string[] {
   const best = Math.max(...state.players.map((p) => p.score))
   return state.players.filter((p) => p.score === best).map((p) => p.name)

@@ -91,13 +91,36 @@ const players = [
   { id: 'b', name: 'Bob' },
 ]
 
-function play(state: GameState, maxTurns = 5000): GameState {
+/** The card in `player`'s hand matching the current pattern, if any. */
+function matchFor(state: GameState, player: number): number | undefined {
+  const canon = canonical(state.pattern)
+  return state.players[player].hand.find((c) => SHAPE_CANON[c] === canon)
+}
+
+/** Move the current player so the pattern becomes `card`'s shape (or any move). */
+function moveTo(state: GameState, card?: number): GameState {
+  const moves = allMoves(state)
+  const move = moves.find((m) => card !== undefined &&
+    canonical(state.pattern.map((s, i) => (i === m.index ? m.to : s))) === SHAPE_CANON[card]) ?? moves[0]
+  return applyAction(state, { type: 'move', playerId: state.players[state.current].id, ...move })
+}
+
+const claim = (state: GameState, playerId: string, card: number) =>
+  applyAction(state, { type: 'claim', playerId, card, seen: state.moveCount })
+
+/** Plays out a game: anyone holding a match claims it, otherwise the mover moves. */
+function play(state: GameState, maxTurns = 20000): GameState {
   for (let i = 0; i < maxTurns && state.phase !== 'gameOver'; i++) {
     if (state.phase === 'roundOver') {
       state = applyAction(state, { type: 'nextRound', playerId: 'a' })
       continue
     }
-    // Greedy bot: take a matching move, else a varied non-matching one so it does not oscillate.
+    const claimer = state.players.findIndex((_, p) => matchFor(state, p) !== undefined)
+    if (claimer >= 0) {
+      state = claim(state, state.players[claimer].id, matchFor(state, claimer)!)
+      continue
+    }
+    // Greedy bot: create a match for yourself if possible, else a varied move so it does not oscillate.
     const moves = allMoves(state)
     const move = findMatchingMove(state) ?? moves[(i * 7919) % moves.length]
     state = applyAction(state, { type: 'move', playerId: state.players[state.current].id, ...move })
@@ -105,7 +128,7 @@ function play(state: GameState, maxTurns = 5000): GameState {
   return state
 }
 
-describe('standard variant', () => {
+describe('turns and moves', () => {
   it('deals five cards each and sets the pattern', () => {
     const s = newGame(players, { variant: 'standard', rounds: 1, seed: 1 })
     expect(s.players.map((p) => p.hand.length)).toEqual([5, 5])
@@ -120,43 +143,72 @@ describe('standard variant', () => {
     expect(() => applyAction(s, { type: 'move', playerId: 'a', index: 0, to: H(99, 99) })).toThrow()
   })
 
-  it('draws a card when the mover cannot match', () => {
-    const s = newGame(players, { variant: 'standard', rounds: 1, seed: 3 })
-    // Give both players a card that differs from the pattern the move creates.
-    const move = allMoves(s)[0]
-    const after = s.pattern.map((st, i) => (i === move.index ? move.to : st))
-    const unreachable = SHAPE_CANON.findIndex((c) => c !== canonical(after))
-    s.players[0].hand = [unreachable]
-    s.players[1].hand = [unreachable]
-    const next = applyAction(s, { type: 'move', playerId: 'a', ...move })
-    expect(next.players[0].hand.length).toBe(2)
+  it('passes the turn after a move and never plays cards by itself', () => {
+    const s = newGame(players, { variant: 'standard', rounds: 1, seed: 5 })
+    const card = s.players[0].hand[0]
+    const next = moveTo(s, card)
     expect(next.current).toBe(1)
+    expect(next.players[0].hand).toEqual(s.players[0].hand)
+    expect(next.moveCount).toBe(1)
+  })
+})
+
+describe('claiming cards', () => {
+  it('scores +1 for a correct claim, by any player, at any time', () => {
+    const s = newGame(players, { variant: 'standard', rounds: 1, seed: 5 })
+    // It is Ann's turn, but Bob holds the shape on the grid and calls it.
+    const bobsCard = SHAPE_CANON.indexOf(canonical(s.pattern))
+    s.players[0].hand = s.players[0].hand.filter((c) => c !== bobsCard)
+    s.players[1].hand[0] = bobsCard
+    expect(s.current).toBe(0)
+    const next = claim(s, 'b', bobsCard)
+    expect(next.players[1].score).toBe(1)
+    expect(next.players[1].hand).not.toContain(bobsCard)
+    expect(next.players[1].pile).toEqual([bobsCard])
+    expect(next.lastClaim).toMatchObject({ player: 1, card: bobsCard, ok: true })
   })
 
-  it('lets the mover and others play a matching card', () => {
+  it('costs a point for a wrong claim and keeps the card', () => {
     const s = newGame(players, { variant: 'standard', rounds: 1, seed: 5 })
-    const move = allMoves(s)[0]
-    const after = canonical(s.pattern.map((st, i) => (i === move.index ? move.to : st)))
-    const card = SHAPE_CANON.indexOf(after)
-    s.players[0].hand = [card, 0, 1]
-    s.players[1].hand = [card, 2]
-    const next = applyAction(s, { type: 'move', playerId: 'a', ...move })
-    expect(next.players[0].hand).toEqual([0, 1])
-    expect(next.players[1].hand).toEqual([2])
-    expect(next.lastPlayed.length).toBe(2)
+    const canon = canonical(s.pattern)
+    const wrong = s.players[0].hand.find((c) => SHAPE_CANON[c] !== canon)!
+    const next = claim(s, 'a', wrong)
+    expect(next.players[0].score).toBe(-1)
+    expect(next.players[0].hand).toContain(wrong)
+    expect(next.lastClaim).toMatchObject({ ok: false })
   })
 
-  it('scores minus points when a hand empties', () => {
+  it('refuses a stale claim without penalty', () => {
     const s = newGame(players, { variant: 'standard', rounds: 1, seed: 5 })
-    const move = allMoves(s)[0]
-    const card = SHAPE_CANON.indexOf(canonical(s.pattern.map((st, i) => (i === move.index ? move.to : st))))
+    const moved = moveTo(s)
+    const card = moved.players[0].hand[0]
+    expect(() => applyAction(moved, { type: 'claim', playerId: 'a', card, seen: s.moveCount })).toThrow(/Too late/)
+  })
+
+  it('rejects cards that are not in your hand', () => {
+    const s = newGame(players, { variant: 'standard', rounds: 1, seed: 5 })
+    expect(() => claim(s, 'a', s.players[1].hand[0])).toThrow(/not in your hand/)
+  })
+
+  it('a claimed shape cannot be claimed again', () => {
+    const s = newGame(players, { variant: 'standard', rounds: 1, seed: 5 })
+    const card = SHAPE_CANON.indexOf(canonical(s.pattern))
+    s.players[0].hand[0] = card
+    const next = claim(s, 'a', card)
+    expect(() => claim(next, 'a', card)).toThrow(/not in your hand/)
+  })
+})
+
+describe('standard variant', () => {
+  it('ends the round when a hand empties; leftovers cost a point each', () => {
+    const s = newGame(players, { variant: 'standard', rounds: 1, seed: 5 })
+    const card = SHAPE_CANON.indexOf(canonical(s.pattern))
     s.players[0].hand = [card]
-    s.players[1].hand = [card === 0 ? 1 : 0, 2, 3]
-    s.players[1].hand = s.players[1].hand.filter((c) => c !== card)
-    const next = applyAction(s, { type: 'move', playerId: 'a', ...move })
+    s.players[1].hand = s.players[1].hand.filter((c) => c !== card).slice(0, 3)
+    const next = claim(s, 'a', card)
     expect(next.phase).toBe('gameOver')
-    expect(next.players[0].score).toBe(0)
-    expect(next.players[1].score).toBe(-next.players[1].hand.length)
+    expect(next.players[0].score).toBe(1)
+    expect(next.players[1].score).toBe(-3)
     expect(winnerNames(next)).toEqual(['Ann'])
   })
 
@@ -164,25 +216,26 @@ describe('standard variant', () => {
     const end = play(newGame(players, { variant: 'standard', rounds: 3, seed: 42 }))
     expect(end.phase).toBe('gameOver')
     expect(end.round).toBe(3)
-    expect(end.players.every((p) => p.score <= 0)).toBe(true)
   })
 })
 
 describe('plus variant', () => {
-  it('grants an extra move after a match and refills at turn end', () => {
+  it('replaces a correctly played card from the deck', () => {
     const s = newGame(players, { variant: 'plus', rounds: 1, seed: 7 })
-    const move = allMoves(s)[0]
-    const card = SHAPE_CANON.indexOf(canonical(s.pattern.map((st, i) => (i === move.index ? move.to : st))))
-    s.players[0].hand = [card, ...s.players[0].hand.filter((c) => c !== card)].slice(0, 5)
-    const next = applyAction(s, { type: 'move', playerId: 'a', ...move })
-    expect(next.current).toBe(0)
-    expect(next.players[0].pile).toEqual([card])
-    expect(next.players[0].hand.length).toBe(4)
+    const card = SHAPE_CANON.indexOf(canonical(s.pattern))
+    s.players[0].hand[0] = card
+    s.deck = s.deck.filter((c) => c !== card)
+    const deck = s.deck.length
+    const next = claim(s, 'a', card)
+    expect(next.players[0].hand.length).toBe(5)
+    expect(next.deck.length).toBe(deck - 1)
+    expect(next.players[0].score).toBe(1)
   })
 
-  it('ends when a player cannot refill and scores piles', () => {
+  it('ends when the deck runs out', () => {
     const end = play(newGame(players, { variant: 'plus', rounds: 1, seed: 9 }))
     expect(end.phase).toBe('gameOver')
+    expect(end.deck.length).toBe(0)
     expect(end.players.map((p) => p.score)).toEqual(end.players.map((p) => p.pile.length))
   })
 

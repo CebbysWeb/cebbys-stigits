@@ -17,13 +17,20 @@ export interface HandOptions {
   interactive: boolean
   minCard: number
   maxCard: number
+  /** Called when the player drags a card up out of the hand to play it. */
+  onPlay?: (card: number) => void
 }
+
+/** How far (px) a card must be dragged upwards to play it on release. */
+const PLAY_DISTANCE = 90
 
 export class HandView {
   readonly el: HTMLDivElement
   private order: number[] = []
   private cards = new Map<number, HTMLDivElement>()
   private cardWidth = 90
+  /** How each card is turned in the hand: quarter turns (unbounded, so animations spin the short way) and mirroring. */
+  private orient = new Map<number, { turns: number; flip: boolean }>()
   private drag: { id: number; pointerId: number; startX: number; startY: number; baseX: number } | null = null
 
   private opts: HandOptions
@@ -35,9 +42,12 @@ export class HandView {
     window.addEventListener('resize', () => this.layout())
     if (!opts.interactive) return
     this.el.addEventListener('pointerdown', (e) => this.onDown(e))
-    this.el.addEventListener('pointermove', (e) => this.onMove(e))
-    this.el.addEventListener('pointerup', (e) => this.onUp(e))
-    this.el.addEventListener('pointercancel', (e) => this.onUp(e))
+    // Moves and releases are heard on the window: a re-render moves this element,
+    // which drops pointer capture, and the release must still end the drag.
+    window.addEventListener('pointermove', (e) => this.onMove(e))
+    window.addEventListener('pointerup', (e) => this.onUp(e))
+    window.addEventListener('pointercancel', (e) => this.onUp(e))
+    window.addEventListener('keydown', (e) => this.onKey(e))
   }
 
   /** Current order of card ids, left to right. */
@@ -53,6 +63,7 @@ export class HandView {
     for (const [id, card] of this.cards) {
       if (inHand.has(id)) continue
       this.cards.delete(id)
+      this.orient.delete(id)
       card.classList.add('leaving')
       card.addEventListener('transitionend', () => card.remove(), { once: true })
       setTimeout(() => card.remove(), 600)
@@ -89,11 +100,12 @@ export class HandView {
 
   layout(): void {
     const slots = this.slots(this.order.length)
-    this.el.style.height = `${this.cardWidth * 1.33 + (this.opts.interactive ? 40 : 14)}px`
+    this.el.style.height = `${this.cardWidth + (this.opts.interactive ? 40 : 14)}px`
     this.order.forEach((id, i) => {
       const card = this.cards.get(id)
       if (!card) return
       card.style.width = `${this.cardWidth}px`
+      card.style.height = `${this.cardWidth}px`
       card.style.zIndex = String(i + 1)
       if (this.drag?.id === id) return
       const s = slots[i]
@@ -105,7 +117,9 @@ export class HandView {
 
   private onDown(e: PointerEvent): void {
     const card = (e.target as Element).closest<HTMLDivElement>('.hand-card')
-    if (!card || card.classList.contains('leaving')) return
+    if (!card || card.classList.contains('leaving') || e.button !== 0) return
+    e.preventDefault()
+    if (this.drag) this.onUp(e, true)
     const id = Number(card.dataset.card)
     const slot = this.slots(this.order.length)[this.order.indexOf(id)]
     this.drag = { id, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, baseX: slot.x }
@@ -118,10 +132,15 @@ export class HandView {
   private onMove(e: PointerEvent): void {
     const d = this.drag
     if (!d || e.pointerId !== d.pointerId) return
-    const card = this.cards.get(d.id)!
+    if (e.buttons === 0) return this.onUp(e)
+    const card = this.cards.get(d.id)
+    if (!card) return this.onUp(e)
     const x = d.baseX + (e.clientX - d.startX)
-    const y = Math.max(-40, Math.min(30, (e.clientY - d.startY) * 0.4))
-    card.style.transform = `translate(${x}px, ${y}px) rotate(0deg) scale(1.08)`
+    const dy = e.clientY - d.startY
+    const y = Math.max(-window.innerHeight, Math.min(30, dy < 0 ? dy : dy * 0.4))
+    const playing = !!this.opts.onPlay && dy < -PLAY_DISTANCE
+    card.classList.toggle('will-play', playing)
+    card.style.transform = `translate(${x}px, ${y}px) rotate(0deg) scale(${playing ? 1.15 : 1.08})`
 
     // Move the card to the slot nearest its current position.
     const slots = this.slots(this.order.length)
@@ -138,11 +157,42 @@ export class HandView {
     }
   }
 
-  private onUp(e: PointerEvent): void {
+  // While a card is held: R turns it clockwise, E counter-clockwise, F mirrors it.
+  // Only the picture turns; matching ignores rotation and mirroring anyway.
+  private onKey(e: KeyboardEvent): void {
+    if (!this.drag || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+    const key = e.key.toLowerCase()
+    if (key !== 'r' && key !== 'e' && key !== 'f') return
+    e.preventDefault()
+    const id = this.drag.id
+    const o = this.orient.get(id) ?? { turns: 0, flip: false }
+    // A mirrored card's picture turns the other way, so keep R clockwise on screen.
+    const step = key === 'r' ? 1 : key === 'e' ? -1 : 0
+    if (step) o.turns += o.flip ? -step : step
+    else o.flip = !o.flip
+    this.orient.set(id, o)
+    const shape = this.cards.get(id)?.querySelector<SVGElement>('.card-shape')
+    if (shape) shape.style.transform = `scaleX(${o.flip ? -1 : 1}) rotate(${o.turns * 90}deg)`
+  }
+
+  /** Briefly mark a card, e.g. to shake it after a wrong call. */
+  flash(card: number, cls: string): void {
+    const el = this.cards.get(card)
+    if (!el) return
+    el.classList.remove(cls)
+    void el.offsetWidth // restart the animation
+    el.classList.add(cls)
+    setTimeout(() => el.classList.remove(cls), 700)
+  }
+
+  private onUp(e: PointerEvent, force = false): void {
     const d = this.drag
-    if (!d || e.pointerId !== d.pointerId) return
-    this.cards.get(d.id)?.classList.remove('dragging')
+    if (!d || (!force && e.pointerId !== d.pointerId)) return
+    const card = this.cards.get(d.id)
+    const play = !!card?.classList.contains('will-play') && !force
+    card?.classList.remove('dragging', 'will-play')
     this.drag = null
     this.layout()
+    if (play) this.opts.onPlay?.(d.id)
   }
 }
