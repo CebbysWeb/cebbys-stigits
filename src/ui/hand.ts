@@ -113,7 +113,7 @@ export class HandView {
       const s = slots[i]
       card.style.transform = card.classList.contains('entering')
         ? `translate(${s.x}px, ${this.cardWidth * 1.6}px) rotate(${s.angle + 12}deg)`
-        : `translate(${s.x}px, ${s.y + (this.opts.interactive ? 16 : 4)}px) rotate(${s.angle}deg)`
+        : `translate(${s.x}px, ${s.y + (this.opts.interactive ? 16 : 4)}px) rotate(${s.angle}deg) scale(var(--hover, 1))`
     })
   }
 
