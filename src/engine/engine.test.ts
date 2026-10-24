@@ -94,7 +94,7 @@ describe('table settings', () => {
   })
   it('uses the chosen wrong-call penalty', () => {
     for (const penalty of [0, 2]) {
-      const s = newGame(two, { rounds: 1, seed: 2, penalty })
+      const s = newGame(two, { rounds: 1, seed: 2, penalty, mode: 'rounds' })
       const wrong = s.players[1].hand.find((c) => SHAPE_CANON[c] !== canonical(s.pattern))!
       const next = applyAction(s, { type: 'claim', playerId: 'b', card: wrong, seen: s.moveCount })
       expect(next.players[1].score).toBe(0 - penalty)
@@ -276,7 +276,7 @@ describe('claiming cards', () => {
   })
 
   it('costs a point for a wrong claim and keeps the card', () => {
-    const s = newGame(players, { rounds: 1, seed: 5 })
+    const s = newGame(players, { rounds: 1, seed: 5, mode: 'rounds' })
     const canon = canonical(s.pattern)
     const wrong = s.players[0].hand.find((c) => SHAPE_CANON[c] !== canon)!
     const next = claim(s, 'a', wrong)
@@ -307,13 +307,46 @@ describe('claiming cards', () => {
 })
 
 describe('full games', () => {
-  it('plays a multi-round game to a scored finish', () => {
+  it('empty deck: plays until nothing is left to draw; most played cards wins', () => {
     const end = play(newGame(players, { rounds: 3, seed: 42 }))
     expect(end.phase).toBe('gameOver')
-    expect(end.round).toBe(3)
-    // The bot never calls wrong, so scores only grow, and the deck was used up.
-    expect(end.players.every((p) => p.score > 0)).toBe(true)
+    expect(end.round).toBe(1)
     expect(end.deck.length).toBeLessThan(2 * 5)
+    expect(end.players.every((p) => p.score === p.pile.length)).toBe(true)
+  })
+
+  it('empty deck: a wrong call gives back a played card', () => {
+    const s = newGame(players, { rounds: 1, seed: 5 })
+    s.players[0].pile = [50, 51]
+    s.players[0].score = 2
+    const wrong = s.players[0].hand.find((c) => SHAPE_CANON[c] !== canonical(s.pattern))!
+    const next = claim(s, 'a', wrong)
+    expect(next.players[0].pile).toEqual([50])
+    expect(next.players[0].score).toBe(1)
+  })
+
+  it('rounds: a round is one turn each, the deck never runs out', () => {
+    let s = newGame(players, { rounds: 4, seed: 7, mode: 'rounds' })
+    for (let t = 0; t < 7; t++) {
+      expect(s.round).toBe(Math.floor(t / 2) + 1)
+      s = applyAction(s, { type: 'endTurn', playerId: s.players[s.current].id })
+      expect(s.players.every((p) => p.hand.length === 5)).toBe(true)
+    }
+    s = applyAction(s, { type: 'endTurn', playerId: s.players[s.current].id })
+    expect(s.phase).toBe('gameOver')
+    expect(s.round).toBe(4)
+  })
+
+  it('rounds: hands refill forever from a reshuffled deck', () => {
+    let s = newGame(players, { rounds: 40, seed: 9, mode: 'rounds' })
+    while (s.phase === 'playing') {
+      const p = s.players[s.current]
+      // Play away every card the cheap way, so the deck must be reshuffled.
+      p.pile.push(...p.hand.splice(0))
+      s = applyAction(s, { type: 'endTurn', playerId: p.id })
+    }
+    expect(s.round).toBe(40)
+    expect(s.players.every((p) => p.hand.length === 5)).toBe(true)
   })
 
   it('plays a full four-player game', () => {

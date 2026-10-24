@@ -22,8 +22,11 @@ for (const variant of ['two-player'] as const) {
     await guest.click('[data-act=join]')
     await expect(host.locator('.players li')).toHaveCount(2)
     await expect(guest.locator('.lobby-foot')).toContainText('Waiting for the host')
-    await expect(guest.locator('[data-setting=rounds]')).toBeDisabled()
+    await expect(guest.locator('[data-setting=handSize]')).toBeDisabled()
+    // Rounds mode, two rounds: the guest sees the host's choice.
+    await host.click('.mode:has(input[value=rounds])')
     await host.selectOption('[data-setting=rounds]', '2')
+    await expect(guest.locator('.mode.on')).toContainText('Rounds')
     await host.click('[data-act=start]')
     await expect(guest.locator('.board')).toBeVisible()
 
@@ -114,7 +117,6 @@ test('four players join and finish a game', async ({ browser }) => {
     await g.click('[data-act=join]')
     await expect(host.locator('.players li')).toHaveCount(i + 2)
   }
-  await host.selectOption('[data-setting=rounds]', '1')
   await host.click('[data-act=start]')
   for (const g of guests) await expect(g.locator('.board')).toBeVisible()
 

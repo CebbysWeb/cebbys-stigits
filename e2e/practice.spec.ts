@@ -12,7 +12,6 @@ test('offline practice against three bots, seated around the table', async ({ br
   await page.click('[data-act=add-bot]')
   await page.click('[data-act=add-bot]')
   await expect(page.locator('.players li')).toHaveCount(4)
-  await page.selectOption('[data-setting=rounds]', '1')
   await page.click('[data-act=start]')
 
   // Me at the bottom; the next three players in turn order sit left, top and right.
@@ -29,7 +28,7 @@ test('offline practice against three bots, seated around the table', async ({ br
     return { score: p.score, hand: p.hand, phase: g.phase, moveCount: g.moveCount }
   })
 
-  // A wrong call costs a point and shakes the card, which stays in hand.
+  // A wrong call shakes the card, which stays in hand. In Empty Deck it costs a played card (none yet).
   const wrong = await page.evaluate(() => {
     const g = window.__stigits!.snapshot()!.game!
     const p = g.players.find((x) => x.id === window.__stigits!.myId())!
@@ -40,7 +39,7 @@ test('offline practice against three bots, seated around the table', async ({ br
   await playCardByDrag(page, wrong.card)
   await expect(page.locator('.toast')).toContainText('Not a match')
   await expect(page.locator(`.hand-card[data-card="${wrong.card}"].wrong`)).toHaveCount(1)
-  await expect.poll(async () => (await me()).score).toBe(start.score - 1)
+  await expect.poll(async () => (await me()).score).toBe(Math.max(0, start.score - 1))
   expect((await me()).hand).toContain(wrong.card)
 
   // Play to the end. Whenever I hold the shape on the grid I play it by dragging it up.
@@ -155,7 +154,6 @@ test('played cards fly from the hand that played them onto the pile', async ({ b
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage()
   await page.goto(BASE)
   await page.click('[data-act=practice]')
-  await page.selectOption('[data-setting=rounds]', '1')
   await page.click('[data-act=start]')
   await page.waitForTimeout(700)
 

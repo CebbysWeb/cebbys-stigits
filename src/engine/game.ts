@@ -8,16 +8,22 @@ export const MAX_PLAYERS = 12
 export const autoHandSize = (players: number): number => (players <= 6 ? HAND_SIZE : players <= 9 ? 4 : 3)
 
 /** Table rules the host picks in the lobby. */
+export type GameMode = 'emptyDeck' | 'rounds'
+
 export interface Settings {
+  /** Empty deck: one deal of a fixed pile; most played cards wins when nothing is left to draw.
+   *  Rounds: the deck never runs out; a round is one turn each; highest score after N rounds wins. */
+  mode: GameMode
+  /** Rounds mode: how many rounds (one turn per player each). */
   rounds: number
   /** Cards per player; 0 picks a size from the player count. */
   handSize: number
-  /** Cards in play per round beyond the dealt hands; -1 uses the whole deck. */
+  /** Empty deck: cards in the draw pile beyond the dealt hands; -1 uses the whole deck. */
   extraCards: number
   /** Whether players may turn (R/E) and mirror (F) a held card to compare it. */
   rotate: boolean
   mirror: boolean
-  /** Points lost for playing a card that does not match. */
+  /** A wrong call costs this many points (rounds) or played cards (empty deck). */
   penalty: number
   /** Show the green spots a picked-up stick can go to. */
   hints: boolean
@@ -25,7 +31,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  rounds: 3, handSize: 0, extraCards: -1, rotate: true, mirror: true, penalty: 1, hints: true, botSpeed: 'normal',
+  mode: 'emptyDeck', rounds: 3, handSize: 0, extraCards: -1, rotate: true, mirror: true, penalty: 1, hints: true, botSpeed: 'normal',
 }
 
 export const handSizeFor = (s: Settings, players: number): number => s.handSize || autoHandSize(players)
@@ -33,7 +39,7 @@ export const handSizeFor = (s: Settings, players: number): number => s.handSize 
 /** Cards in the draw pile at the start of a round (after the pattern card and the deal). */
 export function deckFor(s: Settings, players: number): number {
   const rest = DECK_SIZE - 1 - players * handSizeFor(s, players)
-  return s.extraCards < 0 ? rest : Math.min(rest, s.extraCards)
+  return s.extraCards < 0 || s.mode === 'rounds' ? rest : Math.min(rest, s.extraCards)
 }
 
 export interface Player {
@@ -109,7 +115,7 @@ export function newGame(players: { id: string; name: string }[], opts: GameOptio
   if (players.length < 1 || players.length > MAX_PLAYERS) throw new Error(`Matchstix needs 1–${MAX_PLAYERS} players`)
   const state: GameState = {
     settings: { ...DEFAULT_SETTINGS, ...Object.fromEntries(Object.entries(opts).filter(([k]) => k !== 'seed')) },
-    roundsTotal: Math.max(1, opts.rounds),
+    roundsTotal: opts.mode === 'rounds' ? Math.max(1, opts.rounds) : 1,
     round: 0,
     players: players.map((p) => ({ ...p, hand: [], pile: [], score: 0 })),
     deck: [],
@@ -202,7 +208,15 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
   const n = state.players.length
   for (let k = 0; k < n; k++) {
     const p = state.players[(state.current + k) % n]
-    while (p.hand.length < handSize(state) && state.deck.length) p.hand.push(state.deck.pop()!)
+    while (p.hand.length < handSize(state)) {
+      // In rounds mode the deck never runs out: reshuffle every card nobody holds.
+      if (!state.deck.length && state.settings.mode === 'rounds') {
+        const held = new Set(state.players.flatMap((x) => x.hand))
+        state.deck = shuffle(state, [...Array(DECK_SIZE).keys()].filter((c) => !held.has(c)))
+      }
+      if (!state.deck.length) break
+      p.hand.push(state.deck.pop()!)
+    }
   }
   if (state.players.some((p) => p.hand.length < handSize(state))) {
     state.log.push('The deck ran out.')
@@ -211,6 +225,17 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
   }
   state.current = (state.current + 1) % n
   state.turn += 1
+  // Rounds mode: a round is one turn for every player; the board carries on.
+  if (state.settings.mode === 'rounds' && state.turn > n) {
+    if (state.round >= state.roundsTotal) {
+      state.phase = 'gameOver'
+      state.log.push(`Game over! ${winnerNames(state).join(' & ')} wins.`)
+      return
+    }
+    state.round += 1
+    state.turn = 1
+    state.log.push(`Round ${state.round} begins.`)
+  }
   state.movesLeft = 1
   state.turnMoved = false
   state.lastPlayed = []
@@ -231,8 +256,19 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
   const ok = SHAPE_CANON[action.card] === canonical(state.pattern)
   state.lastClaim = { player: i, card: action.card, ok, seq: (state.lastClaim?.seq ?? 0) + 1 }
   if (!ok) {
-    p.score -= state.settings.penalty
-    state.log.push(`${p.name} played a card that does not match (−1).`)
+    const cost = state.settings.penalty
+    if (state.settings.mode === 'emptyDeck') {
+      // Played cards are what count here, so a wrong call gives some back (out of the game).
+      for (const card of p.pile.splice(Math.max(0, p.pile.length - cost))) {
+        const at = state.played.findLastIndex((x) => x.card === card)
+        if (at >= 0) state.played.splice(at, 1)
+      }
+      p.score = p.pile.length
+      state.log.push(`${p.name} played a card that does not match${cost ? ` (−${cost} played)` : ''}.`)
+    } else {
+      p.score -= cost
+      state.log.push(`${p.name} played a card that does not match${cost ? ` (−${cost})` : ''}.`)
+    }
     return
   }
   p.hand.splice(h, 1)

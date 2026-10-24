@@ -212,14 +212,25 @@ function renderLobby(s: Snapshot): string {
     `<label class="setting"><span><b>${label}</b><small>${hint}</small></span>${control}</label>`
   const maxHand = (h: number) => n * h > DECK_SIZE - 1
 
+  const rounds = set.mode === 'rounds'
+  const modes: [Settings['mode'], string, string][] = [
+    ['emptyDeck', 'Empty Deck', 'Draw back up each turn until the pile is gone. Most played cards wins.'],
+    ['rounds', 'Rounds', 'Endless deck. A round is one turn each. Highest score after the last round wins.'],
+  ]
   const settings = `
-    ${row('Rounds', 'Highest total score wins.', select('rounds', [1, 2, 3, 5, 7].map((r) => [r, String(r)])))}
-    ${row('Cards in hand', `Each player holds ${hand}.`, select('handSize', [[0, `Auto (${autoHandSize(n)})`], ...[3, 4, 5, 6, 7].map((h): [number, string, boolean] => [h, String(h), maxHand(h)])]))}
-    ${row('Deck', `${n} × ${hand} dealt + ${deck} to draw = ${n * hand + deck + 1} of ${DECK_SIZE} cards.`,
-      select('extraCards', [[-1, 'Whole deck'], ...[5, 10, 15, 20, 30].map((x): [number, string] => [x, `Hands + ${x}`])]))}
+    <div class="modes" role="radiogroup" aria-label="Game mode">${modes.map(([m, label, about]) => `
+      <label class="mode ${set.mode === m ? 'on' : ''}">
+        <input type="radio" name="mode" value="${m}" data-setting="mode" ${set.mode === m ? 'checked' : ''} ${lock}/>
+        <b>${label}</b><small>${about}</small>
+      </label>`).join('')}</div>
+    ${rounds ? row('Rounds', 'One turn for every player per round.', select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
+      : row('Deck', `${n} × ${hand} dealt + ${deck} to draw = ${n * hand + deck + 1} of ${DECK_SIZE} cards.`,
+        select('extraCards', [[-1, 'Whole deck'], ...[5, 10, 15, 20, 30].map((x): [number, string] => [x, `Hands + ${x}`])]))}
+    ${row('Cards in hand', `Each player ${rounds ? 'refills to' : 'holds'} ${hand}.`, select('handSize', [[0, `Auto (${autoHandSize(n)})`], ...[3, 4, 5, 6, 7].map((h): [number, string, boolean] => [h, String(h), maxHand(h)])]))}
     ${row('Rotate cards', 'R / E turn a held card. Off: turn it in your head.', toggle('rotate'))}
     ${row('Mirror cards', 'F flips a held card. Off: flip it in your head.', toggle('mirror'))}
-    ${row('Wrong call', 'Points lost for a card that does not match.', select('penalty', [[0, 'No penalty'], [1, '−1 point'], [2, '−2 points']]))}
+    ${rounds ? row('Wrong call', 'Points lost for a card that does not match.', select('penalty', [[0, 'No penalty'], [1, '−1 point'], [2, '−2 points']]))
+      : row('Wrong call', 'Played cards lost for a card that does not match.', select('penalty', [[0, 'No penalty'], [1, 'Lose 1 played'], [2, 'Lose 2 played']]))}
     ${row('Move hints', 'Show the green spots a stick can go to.', toggle('hints'))}
     ${row('Bot speed', 'How quickly bots move and spot shapes.', select('botSpeed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['quick', 'Quick']]))}`
 
@@ -280,7 +291,7 @@ function renderGame(s: Snapshot, g: GameState): string {
 
   return `<main class="game">
     <header>
-      <span>Round ${g.round}/${g.roundsTotal} · Deck ${g.deck.length}</span>
+      <span>${g.settings.mode === 'rounds' ? `Rounds · Round ${g.round}/${g.roundsTotal}` : `Empty Deck · ${g.deck.length} left to draw`}</span>
       <span class="code">Code ${s.code}</span>
     </header>
     <aside class="scoreboard">
@@ -331,9 +342,10 @@ function renderRoundOver(g: GameState): string {
   const over = g.phase === 'gameOver'
   const rows = [...g.players].sort((a, b) => b.score - a.score)
     .map((p) => `<tr><td>${esc(p.name)}</td><td>${p.pile.length}</td><td>${p.score}</td></tr>`)
+  const cols = g.settings.mode === 'rounds' ? '<th>Played</th><th>Score</th>' : '<th>Played</th><th>Counted</th>'
   return `<div class="overlay"><div class="dialog">
     <h2>${over ? `🏆 ${winnerNames(g).map(esc).join(' & ')} wins!` : `Round ${g.round} over`}</h2>
-    <table><thead><tr><th>Player</th><th>Played this round</th><th>Total</th></tr></thead><tbody>${rows.join('')}</tbody></table>
+    <table><thead><tr><th>Player</th>${cols}</tr></thead><tbody>${rows.join('')}</tbody></table>
     ${host ? (over ? '<button class="primary" data-act="lobby">Back to lobby</button>' : '<button class="primary" data-act="next">Next round</button>')
       : `<p class="hint">Waiting for the host…</p>`}
   </div></div>`
@@ -543,7 +555,7 @@ app.addEventListener('change', (e) => {
   const key = el.dataset.setting as keyof Settings | undefined
   if (!key) return
   const value = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked
-    : key === 'botSpeed' ? el.value : Number(el.value)
+    : key === 'botSpeed' || key === 'mode' ? el.value : Number(el.value)
   session.configure({ [key]: value })
 })
 
