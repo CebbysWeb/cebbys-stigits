@@ -41,6 +41,8 @@ export const PILE_STEP = 10
 export interface Player {
   id: string
   name: string
+  /** Chosen colour, tints this player's card backs. */
+  color?: string
   /** Card (shape) indices in hand. */
   hand: number[]
   /** Cards correctly played this round. */
@@ -121,7 +123,7 @@ function shuffle<T>(state: GameState, items: T[]): T[] {
   return items
 }
 
-export function newGame(players: { id: string; name: string }[], opts: GameOptions): GameState {
+export function newGame(players: { id: string; name: string; color?: string }[], opts: GameOptions): GameState {
   if (players.length < 1 || players.length > MAX_PLAYERS) throw new Error(`Matchstix needs 1–${MAX_PLAYERS} players`)
   const state: GameState = {
     settings: { ...DEFAULT_SETTINGS, ...Object.fromEntries(Object.entries(opts).filter(([k]) => k !== 'seed')) },

@@ -25,6 +25,8 @@ export interface LobbyPlayer {
   id: string
   name: string
   connected: boolean
+  /** The player's chosen colour, used to tint their card backs. */
+  color?: string
 }
 export interface Snapshot {
   code: string
@@ -33,7 +35,7 @@ export interface Snapshot {
   game: GameState | null
 }
 
-type ToHost = { t: 'hello'; pid: string; name: string } | { t: 'action'; action: Action }
+type ToHost = { t: 'hello'; pid: string; name: string; color?: string } | { t: 'action'; action: Action }
 type ToClient = { t: 'snapshot'; snapshot: Snapshot } | { t: 'error'; message: string }
 
 /**
@@ -105,12 +107,12 @@ export class HostSession implements Session {
   private botTimer = 0
   private botClaims = new Map<string, number>()
 
-  private constructor(peer: Peer | null, code: string, name: string, events: SessionEvents) {
+  private constructor(peer: Peer | null, code: string, name: string, color: string, events: SessionEvents) {
     this.peer = peer
     this.events = events
     this.snapshot = {
       code,
-      players: [{ id: HOST_ID, name, connected: true }],
+      players: [{ id: HOST_ID, name, color, connected: true }],
       settings: { ...DEFAULT_SETTINGS },
       game: null,
     }
@@ -119,8 +121,8 @@ export class HostSession implements Session {
   }
 
   /** An offline game against bots: no network needed. */
-  static local(name: string, events: SessionEvents): HostSession {
-    const session = new HostSession(null, LOCAL_CODE, name, events)
+  static local(name: string, color: string, events: SessionEvents): HostSession {
+    const session = new HostSession(null, LOCAL_CODE, name, color, events)
     session.addBot()
     return session
   }
@@ -134,7 +136,7 @@ export class HostSession implements Session {
     if (s.game || s.players.length >= MAX_PLAYERS) return
     const used = new Set(s.players.map((p) => p.id))
     const n = BOT_NAMES.findIndex((_, i) => !used.has(BOT_PREFIX + i))
-    s.players.push({ id: BOT_PREFIX + n, name: BOT_NAMES[n], connected: true })
+    s.players.push({ id: BOT_PREFIX + n, name: BOT_NAMES[n], color: `hsl(${Math.floor(Math.random() * 360)} 70% 48%)`, connected: true })
     this.publish()
   }
 
@@ -192,12 +194,12 @@ export class HostSession implements Session {
     }
   }
 
-  static async create(name: string, events: SessionEvents): Promise<HostSession> {
+  static async create(name: string, color: string, events: SessionEvents): Promise<HostSession> {
     for (let attempt = 0; ; attempt++) {
       const code = randomCode()
       try {
         const peer = await openPeer(PEER_PREFIX + code)
-        return new HostSession(peer, code, name, events)
+        return new HostSession(peer, code, name, color, events)
       } catch (err) {
         if ((err as { type?: string }).type !== 'unavailable-id' || attempt > 3) throw err
       }
@@ -225,7 +227,7 @@ export class HostSession implements Session {
     })
   }
 
-  private join(conn: DataConnection, msg: { pid: string; name: string }): string | null {
+  private join(conn: DataConnection, msg: { pid: string; name: string; color?: string }): string | null {
     const existing = this.snapshot.players.find((p) => p.id === msg.pid)
     if (existing) {
       existing.connected = true
@@ -235,7 +237,8 @@ export class HostSession implements Session {
       return this.reject(conn, `This game is full (${MAX_PLAYERS} players).`)
     } else {
       const name = String(msg.name || 'Player').slice(0, 20)
-      this.snapshot.players.push({ id: msg.pid, name, connected: true })
+      const color = /^#[0-9a-f]{6}$/i.test(msg.color ?? '') ? msg.color : undefined
+      this.snapshot.players.push({ id: msg.pid, name, color, connected: true })
     }
     this.conns.get(msg.pid)?.close()
     this.conns.set(msg.pid, conn)
@@ -312,7 +315,7 @@ export class ClientSession implements Session {
     this.myId = myId
   }
 
-  static async join(code: string, name: string, events: SessionEvents): Promise<ClientSession> {
+  static async join(code: string, name: string, color: string, events: SessionEvents): Promise<ClientSession> {
     // A stable per-tab id lets a reloaded tab reclaim its seat.
     let pid = sessionStorage.getItem('stigits-pid')
     if (!pid) {
@@ -338,7 +341,7 @@ export class ClientSession implements Session {
       else events.onError(msg.message)
     })
     conn.on('close', () => events.onDisconnect?.())
-    conn.send({ t: 'hello', pid, name } satisfies ToHost)
+    conn.send({ t: 'hello', pid, name, color } satisfies ToHost)
     return new ClientSession(peer, conn, pid)
   }
 

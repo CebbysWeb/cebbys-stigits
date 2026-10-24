@@ -5,6 +5,7 @@ import { ClientSession, HostSession, isBot, type Session, type Snapshot, MAX_PLA
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
 import { PlayedPile } from './ui/pile'
+import { bindColorPicker, colorPickerHtml, loadProfile, loadSettings, profileColor, saveProfile, saveSettings } from './ui/profile'
 import type { Stick } from './engine/geometry'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -39,13 +40,8 @@ let status = ''
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
-function storedName(): string {
-  try {
-    return localStorage.getItem('stigits-name') ?? ''
-  } catch {
-    return ''
-  }
-}
+/** This device's player profile (name and colour), remembered between visits. */
+const profile = loadProfile()
 
 function joinCodeFromUrl(): string | null {
   const m = location.hash.match(/join=([A-Za-z0-9]+)/)
@@ -115,20 +111,21 @@ const events = {
 async function connect(mode: 'host' | 'join' | 'practice', code?: string): Promise<void> {
   const input = document.querySelector<HTMLInputElement>('#name')
   const name = input?.value.trim() || 'Player'
-  try {
-    localStorage.setItem('stigits-name', name)
-  } catch {
-    /* storage unavailable */
-  }
+  profile.name = name
+  saveProfile(profile)
+  const color = profileColor(profile)
   if (mode === 'practice') {
-    session = HostSession.local(name, events)
+    session = HostSession.local(name, color, events)
+    // The host's table settings are remembered on this device.
+    ;(session as HostSession).configure(loadSettings())
     events.onSnapshot(structuredClone((session as HostSession).snapshot))
     return
   }
   status = mode === 'host' ? 'Opening a game…' : `Joining ${code}…`
   render()
   try {
-    session = mode === 'host' ? await HostSession.create(name, events) : await ClientSession.join(code!, name, events)
+    session = mode === 'host' ? await HostSession.create(name, color, events) : await ClientSession.join(code!, name, color, events)
+    if (session instanceof HostSession) session.configure(loadSettings())
     status = ''
     if (session instanceof HostSession) events.onSnapshot(structuredClone(session.snapshot))
   } catch (err) {
@@ -139,7 +136,11 @@ async function connect(mode: 'host' | 'join' | 'practice', code?: string): Promi
 }
 
 function render(): void {
-  if (!session || !snapshot) app.innerHTML = renderHome()
+  if (!session || !snapshot) {
+    app.innerHTML = renderHome()
+    const home = app.querySelector<HTMLElement>('.home')
+    if (home) bindColorPicker(home, profile, saveProfile)
+  }
   else if (!snapshot.game) app.innerHTML = renderLobby(snapshot)
   else {
     const g = snapshot.game
@@ -161,6 +162,7 @@ function render(): void {
       if (!view) seatHands.set(p.id, (view = new HandView({ interactive: false, minCard: 30, maxCard: 46, faceDown: true })))
       // Side seats are rotated, so their fan runs along the seat's height.
       const side = holder.closest('.seat-left, .seat-right')
+      holder.style.setProperty('--back', p.color ?? '')
       if (side) holder.style.width = `${Math.min(320, (side as HTMLElement).clientHeight - 8)}px`
       holder.append(view.el)
       view.update(p.hand)
@@ -173,7 +175,10 @@ function renderHome(): string {
   return `<main class="home">
     <h1>Stigits</h1>
     <p class="tagline">Move one matchstick. Match your cards. Empty your hand.</p>
-    <label>Your name <input id="name" maxlength="20" value="${esc(storedName())}" placeholder="Player"/></label>
+    <section class="profile">
+      <label>Your name <input id="name" maxlength="20" value="${esc(profile.name)}" placeholder="Player"/></label>
+      ${colorPickerHtml(profile)}
+    </section>
     ${status ? `<p class="status">${esc(status)}</p>` : code
       ? `<button class="primary" data-act="join" data-code="${code}">Join game ${code}</button>
          <button class="link" data-act="clear-join">Host my own game instead</button>`
@@ -198,7 +203,7 @@ function renderLobby(s: Snapshot): string {
   const full = n >= MAX_PLAYERS
 
   const players = s.players.map((p) => `<li>
-      <span class="avatar ${isBot(p.id) ? 'bot' : ''}">${esc(p.name.slice(0, 1).toUpperCase() || '?')}</span>
+      <span class="avatar" style="background: ${esc(p.color ?? 'var(--accent)')}">${esc(p.name.slice(0, 1).toUpperCase() || '?')}</span>
       <span class="pl-name">${esc(p.name)}${p.id === session!.myId ? ' <em>(you)</em>' : ''}${isBot(p.id) ? ' <em>· bot</em>' : ''}</span>
       ${p.id === 'host' ? '<span class="tag">host</span>' : ''}
       ${host && isBot(p.id) ? `<button class="icon" data-act="remove" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">×</button>` : ''}
@@ -313,15 +318,17 @@ function renderGame(s: Snapshot, g: GameState): string {
   return `<main class="game">
     <aside class="scoreboard">
       <h2>Scores <span class="turn-badge">Turn ${g.turn}</span></h2>
-      <ol>${g.players.map((p, i) => {
-        const online = s.players.find((x) => x.id === p.id)?.connected !== false
-        return `<li class="${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
-          <span class="sb-name">${esc(p.name)}${i === me ? ' (you)' : ''}${online ? '' : ' <span class="off">offline</span>'}</span>
-          <span class="sb-score">${p.score}</span>
-          <span class="sb-meta">${p.pile.length} played · ${p.hand.length} in hand</span>
-        </li>`
-      }).join('')}</ol>
-      <p class="sb-foot">${g.settings.mode === 'rounds' ? `Round ${g.round} of ${g.roundsTotal}` : `${g.pileLeft} cards left in the pile`}</p>
+      <table class="sb-table">
+        <thead><tr><th>Player</th><th class="num" title="Cards played">Played</th><th class="num sb-hand" title="Cards in hand">Hand</th><th class="num" title="Score">Pts</th></tr></thead>
+        <tbody>${g.players.map((p, i) => {
+          const online = s.players.find((x) => x.id === p.id)?.connected !== false
+          return `<tr class="${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
+            <td class="sb-name"><span class="dot" style="background: ${esc(p.color ?? 'var(--accent)')}"></span><span>${esc(p.name)}${i === me ? ' (you)' : ''}${online ? '' : ' <span class="off">offline</span>'}</span></td>
+            <td class="num">${p.pile.length}</td><td class="num sb-hand">${p.hand.length}</td><td class="num sb-score">${p.score}</td>
+          </tr>`
+        }).join('')}</tbody>
+      </table>
+      ${g.settings.mode === 'rounds' ? `<p class="sb-foot">Round ${g.round} of ${g.roundsTotal}</p>` : ''}
     </aside>
     <section class="table-layout">
       ${['left', 'top', 'right'].map((side) => {
@@ -378,7 +385,8 @@ app.addEventListener('click', async (e) => {
     case 'pile-step': {
       if (!(session instanceof HostSession) || !snapshot) return
       const next = snapshot.settings.pile + Number(el.dataset.step)
-      return session.configure({ pile: Math.max(PILE_MIN, Math.min(PILE_MAX, next)) })
+      session.configure({ pile: Math.max(PILE_MIN, Math.min(PILE_MAX, next)) })
+      return saveSettings(session.snapshot.settings)
     }
     case 'help':
       helpOpen = !helpOpen
@@ -603,6 +611,11 @@ window.addEventListener('pointercancel', (e) => endDrag(e, false))
 
 // Dragging the pile slider updates the number live; the setting is sent on release.
 app.addEventListener('input', (e) => {
+  if ((e.target as Element).id === 'name') {
+    profile.name = (e.target as HTMLInputElement).value.trim()
+    saveProfile(profile)
+    return
+  }
   const range = e.target as HTMLInputElement
   if (!range.classList.contains('pile-range')) return
   const b = document.querySelector('#pile-value b')
@@ -618,6 +631,7 @@ app.addEventListener('change', (e) => {
   const value = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked
     : key === 'botSpeed' || key === 'mode' || key === 'miss' ? el.value : Number(el.value)
   session.configure({ [key]: value })
+  saveSettings(session.snapshot.settings)
 })
 
 window.addEventListener('beforeunload', (e) => {

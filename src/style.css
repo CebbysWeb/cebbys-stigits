@@ -172,8 +172,9 @@ body:has(.game) { background-color: var(--paper); overflow: hidden; }
 .hit { stroke: transparent; stroke-width: 0.5; cursor: grab; pointer-events: stroke; }
 .board.dragging, .board.dragging .hit { cursor: grabbing; }
 .stick { pointer-events: none; transition: opacity 0.15s; }
-.ghost { stroke: var(--ghost); stroke-width: 0.1; stroke-dasharray: 0.12 0.1; stroke-linecap: round; pointer-events: none; opacity: 0.7; transition: all 0.12s; }
-.ghost.hot { stroke-width: 0.2; opacity: 1; stroke-dasharray: none; }
+/* Spots a held stick can go: just a faint suggestion, a little clearer under the stick. */
+.ghost { stroke: var(--ghost); stroke-width: 0.07; stroke-dasharray: 0.1 0.12; stroke-linecap: round; pointer-events: none; opacity: 0.28; transition: all 0.12s; }
+.ghost.hot { stroke-width: 0.12; opacity: 0.5; stroke-dasharray: none; }
 .ghost.blind, .ghost.blind.hot { opacity: 0; }
 .stick .shaft { transition: stroke 0.3s; }
 /* Idle hint: a couple of movable sticks gently sway, swell a little and brighten. */
@@ -354,45 +355,52 @@ body:has(.game) { background-color: var(--paper); overflow: hidden; }
 /* Back of another player's card: their shapes stay hidden. */
 .card-back {
   width: 100%; height: 100%; border-radius: 4px;
-  background: repeating-linear-gradient(45deg, var(--accent) 0 4px, color-mix(in srgb, var(--accent) 70%, var(--panel)) 4px 8px);
+  background: repeating-linear-gradient(45deg, var(--back, var(--accent)) 0 4px, color-mix(in srgb, var(--back, var(--accent)) 70%, var(--panel)) 4px 8px);
   opacity: 0.85;
 }
 
 /* Scoreboard down the left edge; the rest of the table shifts right to make room. */
-:root { --sb-width: 180px; }
+:root { --sb-width: 240px; }
 .scoreboard {
   position: fixed; left: 12px; top: 80px; width: var(--sb-width); z-index: 3;
   background: var(--glass); border: 1px solid rgb(226 232 240 / 0.8);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   border-radius: 16px; padding: 10px 12px; box-shadow: var(--shadow);
 }
-.scoreboard h2 { margin: 0 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
-.scoreboard ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.scoreboard li {
-  display: grid; grid-template-columns: 1fr auto; column-gap: 8px; padding: 6px 8px;
-  border-radius: 8px; border-left: 3px solid transparent;
-}
-.scoreboard li.active { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.scoreboard li.me .sb-name { font-weight: 700; }
-.sb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-score { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; grid-row: span 2; align-self: center; }
-.sb-meta { font-size: 0.72rem; color: var(--muted); }
+.scoreboard h2 { margin: 0 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; display: flex; align-items: center; justify-content: space-between; }
+.sb-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.82rem; table-layout: fixed; }
+.sb-table th { font-size: 0.62rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; text-align: left; padding: 0 4px 6px; border-bottom: 1px solid var(--line); }
+.sb-table th:not(:first-child) { width: 42px; padding-right: 2px; }
+.sb-table td { padding: 7px 4px; border-bottom: 1px solid rgb(226 232 240 / 0.6); }
+.sb-table tr:last-child td { border-bottom: none; }
+.sb-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sb-table td.num { color: var(--muted); }
+.sb-table td.sb-score { color: var(--ink); font-weight: 700; font-size: 0.95rem; }
+.sb-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sb-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-table .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgb(15 23 42 / 0.12); }
+.sb-table tr.active td { background: rgb(249 115 22 / 0.1); }
+.sb-table tr.active td:first-child { border-radius: 8px 0 0 8px; box-shadow: inset 3px 0 0 var(--accent); }
+.sb-table tr.active td:last-child { border-radius: 0 8px 8px 0; }
+.sb-table tr.me .sb-name { font-weight: 700; }
 /* Equal gutters on both sides keep the table centred: the scoreboard sits in the left one,
    the played pile in the right one. */
 .table-layout { padding-left: calc(var(--sb-width) + 24px); padding-right: calc(var(--sb-width) + 24px); }
 @media (max-width: 560px) {
   :root { --sb-width: 96px; }
   .scoreboard { left: 6px; padding: 6px; top: 84px; }
-  .scoreboard li { padding: 4px; }
-  .sb-meta { display: none; }
-  .table-layout { padding-left: calc(var(--sb-width) + 10px); padding-right: calc(var(--sb-width) + 10px); }
+  .sb-table th:not(:first-child):not(:last-child), .sb-table td.num:not(.sb-score) { display: none; }
+  .sb-table th:last-child { width: 30px; }
+  /* Phones: the scoreboard and pile float over the board; my hand gets the full width. */
+  .table-layout { padding-left: 6px; padding-right: 6px; padding-top: 250px; grid-template-areas: ". top ." "left center right" "bottom bottom bottom"; }
+  .scoreboard { top: 60px; }
 }
 
 .end-turn { white-space: nowrap; }
 @media (max-width: 560px) {
   .game header { font-size: 0.75rem; }
   .game header .code { display: none; }
-  .turn { white-space: normal; text-align: center; width: calc(100vw - 32px); font-size: 0.85rem; }
+  .turn { white-space: normal; text-align: center; width: calc(100vw - 72px); left: calc(50% + 26px); top: 14px; font-size: 0.8rem; }
 }
 
 /* After a move, End turn pulses to say the turn can be finished. */
@@ -402,3 +410,30 @@ body:has(.game) { background-color: var(--paper); overflow: hidden; }
   50% { box-shadow: 0 0 0 8px rgb(249 115 22 / 0.25), 0 6px 22px rgb(249 115 22 / 0.6); filter: brightness(1.12); }
 }
 @media (prefers-reduced-motion: reduce) { .end-turn.blink { animation: none; } }
+
+/* Player profile on the home screen: name plus a colour wheel with a shade bar. */
+.profile { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.color-picker { display: flex; align-items: center; gap: 16px; }
+.wheel {
+  position: relative; width: 132px; height: 132px; border-radius: 50%; flex-shrink: 0; cursor: crosshair; touch-action: none;
+  background: radial-gradient(closest-side, #fff, transparent), conic-gradient(from 90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / 0.08);
+}
+/* Darken the wheel to match the shade bar. */
+.wheel::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: #000; opacity: calc(1 - var(--v)); pointer-events: none; }
+.wheel-dot, .shade-dot {
+  position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; z-index: 1; pointer-events: none;
+  border: 3px solid #fff; box-shadow: 0 0 0 1px rgb(15 23 42 / 0.3), 0 2px 6px rgb(15 23 42 / 0.3);
+}
+.shade {
+  position: relative; width: 18px; height: 132px; border-radius: 999px; cursor: ns-resize; touch-action: none; flex-shrink: 0;
+  background: linear-gradient(to bottom, var(--pure), #333);
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / 0.08);
+}
+.shade-dot { left: 50%; }
+.swatch-col { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--muted); }
+.swatch { width: 52px; height: 52px; border-radius: 14px; box-shadow: inset 0 0 0 1px rgb(15 23 42 / 0.1), var(--shadow);
+  background-image: none; }
+
+/* Other players' cards wear their colour. */
+.seat-fan { --card-border: var(--back, #f97316); }
