@@ -80,8 +80,16 @@ input, select { padding: 10px 14px; border-radius: 12px; border: 1px solid var(-
 button.icon { width: 30px; height: 30px; min-height: 0; padding: 0; border: none; background: none; color: var(--muted); font-size: 1.2rem; line-height: 1; }
 button.icon:hover:not(:disabled) { background: #fee2e2; color: var(--head); box-shadow: none; }
 .settings { display: flex; flex-direction: column; }
-.setting-pile { flex-direction: column; align-items: stretch; cursor: default; }
-.setting-pile > span { align-self: stretch; }
+.setting-wide { flex-direction: column; align-items: stretch; cursor: default; gap: 8px; }
+.setting-wide > span { align-self: stretch; }
+.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: #f1f5f9; border-radius: 12px; }
+.segmented label { text-align: center; padding: 8px 6px; border-radius: 9px; font-size: 0.85rem; font-weight: 600; color: var(--muted); cursor: pointer; transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
+.segmented label:hover { color: var(--ink); }
+.segmented label.on { background: #fff; color: var(--accent); box-shadow: 0 1px 3px rgb(15 23 42 / 0.12); }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented label:has(input:focus-visible) { box-shadow: 0 0 0 3px rgb(249 115 22 / 0.25); }
+.segmented label:has(input:disabled) { cursor: default; }
+.seg-about { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .pile-picker { display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 2px; width: 100%; }
 .stepper { display: flex; align-items: center; justify-content: center; gap: 18px; }
 .stepper button {
@@ -268,33 +276,42 @@ body:has(.game) { background-color: var(--paper); }
   40%, 80% { translate: 8px; }
 }
 
-/* The shared pile of played cards, to the right of my hand. */
-.pile { position: fixed; right: 28px; bottom: 40px; width: 84px; height: 84px; z-index: 2; pointer-events: none; }
-.pile:empty, .pile .pile-count { font-size: 0.7rem; color: var(--muted); }
-.pile::before { content: ''; position: absolute; inset: 0; border: 2px dashed var(--line); border-radius: 10px; }
+/* The shared pile of played cards: right edge, half way down. Drop a card on it to play it. */
+.pile {
+  position: fixed; right: 24px; top: 50%; width: 156px; height: 156px; margin-top: -78px; z-index: 2; pointer-events: none;
+  transition: transform 0.2s ease;
+}
+.pile:empty, .pile .pile-count { font-size: 0.8rem; color: var(--muted); }
+.pile::before {
+  content: ''; position: absolute; inset: 0; border: 2px dashed #cbd5e1; border-radius: 16px;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+/* While a card is held the pile invites the drop, and lights up when the card is over it. */
+.pile.drop-ready::before { border-color: var(--accent); background: rgb(249 115 22 / 0.05); }
+.pile.drop-hot { transform: scale(1.08); }
+.pile.drop-hot::before { background: rgb(249 115 22 / 0.14); box-shadow: 0 0 0 6px rgb(249 115 22 / 0.18); border-style: solid; }
 .pile-card {
   position: absolute; inset: 0; padding: 6px; background: var(--card); border: 3px solid var(--card-border);
   border-radius: 10px; box-shadow: 0 1px 2px rgb(15 23 42 / 0.08), 0 4px 12px rgb(15 23 42 / 0.1);
 }
 .pile-card .card-shape { width: 100%; height: 100%; }
 .pile-card.flying { position: fixed; inset: auto; z-index: 50; box-shadow: 0 12px 28px rgb(0 0 0 / 0.3); pointer-events: none; }
-.pile-count { position: absolute; left: 50%; bottom: -18px; transform: translateX(-50%); white-space: nowrap; }
-/* Leave room for the pile beside my hand. */
-.seat-bottom .fan { width: calc(100% - 120px); margin-right: 120px; }
+.pile-count { position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%); white-space: nowrap; }
+.pile-card { border-radius: 14px; padding: 8px; }
 @media (max-width: 560px) {
-  .pile { width: 60px; height: 60px; right: 12px; bottom: 36px; }
-  .seat-bottom .fan { width: calc(100% - 76px); margin-right: 76px; }
+  .pile { width: 84px; height: 84px; margin-top: -42px; right: 8px; }
+  .pile-card { border-radius: 10px; padding: 5px; }
 }
 
 /* End turn sits centred over my cards (the fan leaves room for the pile on its right). */
 /* Positioned absolutely below the cards, so the hand never jumps when it appears. */
 .seat-bottom { position: relative; }
 .seat-bottom .end-turn {
-  position: absolute; bottom: -48px; left: calc((100% - 120px) / 2); translate: -50% 0;
+  position: absolute; bottom: -48px; left: 50%; translate: -50% 0;
   min-height: 34px; padding: 6px 22px;
   pointer-events: auto; z-index: 5;
 }
-@media (max-width: 560px) { .seat-bottom .end-turn { left: calc((100% - 76px) / 2); padding: 6px 14px; } }
+@media (max-width: 560px) { .seat-bottom .end-turn { padding: 6px 14px; } }
 
 /* Controls help: a ? button top left that opens a small panel. */
 .help-btn {
@@ -342,11 +359,20 @@ body:has(.game) { background-color: var(--paper); }
 .sb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-score { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; grid-row: span 2; align-self: center; }
 .sb-meta { font-size: 0.72rem; color: var(--muted); }
-.table-layout { padding-left: calc(var(--sb-width) + 24px); }
+/* Equal gutters on both sides keep the table centred: the scoreboard sits in the left one,
+   the played pile in the right one. */
+.table-layout { padding-left: calc(var(--sb-width) + 24px); padding-right: calc(var(--sb-width) + 24px); }
 @media (max-width: 560px) {
   :root { --sb-width: 96px; }
   .scoreboard { left: 6px; padding: 6px; top: 84px; }
   .scoreboard li { padding: 4px; }
   .sb-meta { display: none; }
-  .table-layout { padding-left: calc(var(--sb-width) + 10px); }
+  .table-layout { padding-left: calc(var(--sb-width) + 10px); padding-right: calc(var(--sb-width) + 10px); }
+}
+
+.end-turn { white-space: nowrap; }
+@media (max-width: 560px) {
+  .game header { font-size: 0.75rem; }
+  .game header .code { display: none; }
+  .turn { white-space: normal; text-align: center; width: calc(100vw - 32px); font-size: 0.85rem; }
 }

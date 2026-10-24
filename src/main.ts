@@ -15,7 +15,7 @@ let selected: number | null = null
 /** Whether the controls help panel is open; kept across re-renders. */
 let helpOpen = false
 const pile = new PlayedPile()
-const hand = new HandView({ interactive: true, minCard: 76, maxCard: 140, onPlay: playCard })
+const hand = new HandView({ interactive: true, minCard: 76, maxCard: 140, onPlay: playCard, dropTarget: () => pile.el })
 
 /** Call a card: it scores if it matches the grid right now, and costs a point if not. */
 function playCard(card: number): void {
@@ -83,7 +83,9 @@ const events = {
       const who = s.game.players[c.player]
       const mine = who.id === session?.myId
       const { penalty, mode } = s.game.settings
-      const cost = !penalty ? '' : mode === 'rounds' ? ` −${penalty}` : ` −${penalty} card${penalty > 1 ? 's' : ''}`
+      const miss = s.game.settings.miss
+      const cost = mode === 'rounds' ? (penalty ? ` −${penalty}` : '')
+        : miss === 'point' ? ' −1' : miss === 'toPile' ? ' — card back to the pile' : ' — card discarded'
       toast(c.ok ? `${mine ? 'Match! ' : `${who.name} matched! `}+1` : `${mine ? 'Not a match' : `${who.name} missed`}${cost}`)
       if (mine && !c.ok) hand.flash(c.card, 'wrong')
       // Two players may hold the same shape, so look only in the claimer's hand.
@@ -217,6 +219,17 @@ function renderLobby(s: Snapshot): string {
     ['emptyDeck', 'Empty Deck', 'Refill your hand from a shared pile. When it runs out, most cards played wins.'],
     ['rounds', 'Rounds', 'Cards never run out. Everyone takes one turn per round. Top score wins.'],
   ]
+  const missRules: [Settings['miss'], string, string][] = [
+    ['toPile', 'Back to pile', 'The card leaves your hand and goes back into the draw pile.'],
+    ['discard', 'Discard', 'The card leaves your hand and is out of the game.'],
+    ['point', '−1 point', 'You lose a point and keep the card.'],
+  ]
+  const missPicker = `<div class="setting setting-wide"><span><b>Wrong guess</b><small>What happens when you play a card that doesn’t match.</small></span>
+      <div class="segmented" role="radiogroup" aria-label="Wrong guess">${missRules.map(([v, label]) => `
+        <label class="${set.miss === v ? 'on' : ''}"><input type="radio" name="miss" value="${v}" data-setting="miss" ${set.miss === v ? 'checked' : ''} ${lock}/>${label}</label>`).join('')}
+      </div>
+      <p class="seg-about">${missRules.find(([v]) => v === set.miss)![2]}</p>
+    </div>`
   const pile = `<div class="pile-picker">
       <div class="stepper">
         <button type="button" data-act="pile-step" data-step="-${PILE_STEP}" aria-label="${PILE_STEP} fewer cards" ${!host || set.pile <= PILE_MIN ? 'disabled' : ''}>−</button>
@@ -234,11 +247,11 @@ function renderLobby(s: Snapshot): string {
         <b>${label}</b><small>${about}</small>
       </label>`).join('')}</div>
     ${rounds ? row('Rounds', 'Each round, every player takes one turn.', select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
-      : `<div class="setting setting-pile"><span><b>Draw pile</b><small>Everyone starts with 5 cards and refills from this pile.</small></span>${pile}</div>`}
+      : `<div class="setting setting-wide"><span><b>Draw pile</b><small>Everyone starts with 5 cards and refills from this pile.</small></span>${pile}</div>`}
     ${row('Turn cards', 'Hold a card and press R or E. Off: picture the turn yourself.', toggle('rotate'))}
     ${row('Flip cards', 'Hold a card and press F. Off: picture the mirror image.', toggle('mirror'))}
     ${rounds ? row('Wrong guess', 'Points lost for playing a card that doesn’t match.', select('penalty', [[0, 'Nothing'], [1, '1 point'], [2, '2 points']]))
-      : row('Wrong guess', 'Played cards lost for playing one that doesn’t match.', select('penalty', [[0, 'Nothing'], [1, '1 card'], [2, '2 cards']]))}
+      : missPicker}
     ${row('Move hints', 'Show green spots where a picked-up stick can go.', toggle('hints'))}
     ${row('Bot speed', 'How fast bots move and spot their shapes.', select('botSpeed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['quick', 'Quick']]))}`
 
@@ -333,7 +346,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       <h2>Controls</h2>
       <ul>
         <li><b>Move a stick:</b> drag it onto a green spot.</li>
-        <li><b>Play a card:</b> spot one of your shapes on the grid and drag the card up. +1 if it matches, ${g.settings.penalty ? `−${g.settings.penalty}` : 'no penalty'} if not.</li>
+        <li><b>Play a card:</b> spot one of your shapes on the grid and drag the card onto the played pile on the right. +1 if it matches, ${g.settings.penalty ? `−${g.settings.penalty}` : 'no penalty'} if not.</li>
         ${g.settings.rotate ? '<li><b>Turn a held card:</b> R clockwise, E counter-clockwise.</li>' : '<li><b>Turning cards is off</b> at this table — turn shapes in your head.</li>'}
         ${g.settings.mirror ? '<li><b>Mirror a held card:</b> F.</li>' : '<li><b>Mirroring is off</b> at this table — flip shapes in your head.</li>'}
         <li><b>Pan:</b> drag the empty grid.</li>
@@ -577,7 +590,7 @@ app.addEventListener('change', (e) => {
   const key = el.dataset.setting as keyof Settings | undefined
   if (!key) return
   const value = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked
-    : key === 'botSpeed' || key === 'mode' ? el.value : Number(el.value)
+    : key === 'botSpeed' || key === 'mode' || key === 'miss' ? el.value : Number(el.value)
   session.configure({ [key]: value })
 })
 

@@ -17,14 +17,16 @@ export interface HandOptions {
   interactive: boolean
   minCard: number
   maxCard: number
-  /** Called when the player drags a card up out of the hand to play it. */
+  /** Called when the player drops a card on the drop target to play it. */
   onPlay?: (card: number) => void
+  /** Where a card must be dropped to be played (the played pile). */
+  dropTarget?: () => Element | null
   /** Show card backs instead of shapes (other players' hands). */
   faceDown?: boolean
 }
 
-/** How far (px) a card must be dragged upwards to play it on release. */
-const PLAY_DISTANCE = 90
+/** Extra room (px) around the drop target that still counts as on it. */
+const DROP_SLACK = 24
 
 export class HandView {
   readonly el: HTMLDivElement
@@ -143,8 +145,13 @@ export class HandView {
     const x = d.baseX + (e.clientX - d.startX)
     const dy = e.clientY - d.startY
     const y = Math.max(-window.innerHeight, Math.min(30, dy < 0 ? dy : dy * 0.4))
-    const playing = !!this.opts.onPlay && dy < -PLAY_DISTANCE
+    const target = this.opts.dropTarget?.()
+    const r = target?.getBoundingClientRect()
+    const playing = !!this.opts.onPlay && !!r && e.clientX > r.left - DROP_SLACK && e.clientX < r.right + DROP_SLACK &&
+      e.clientY > r.top - DROP_SLACK && e.clientY < r.bottom + DROP_SLACK
     card.classList.toggle('will-play', playing)
+    target?.classList.add('drop-ready')
+    target?.classList.toggle('drop-hot', playing)
     card.style.transform = `translate(${x}px, ${y}px) rotate(0deg) scale(1.5)`
 
     // Move the card to the slot nearest its current position.
@@ -197,6 +204,7 @@ export class HandView {
     const card = this.cards.get(d.id)
     const play = !!card?.classList.contains('will-play') && !force
     card?.classList.remove('dragging', 'will-play')
+    this.opts.dropTarget?.()?.classList.remove('drop-ready', 'drop-hot')
     this.drag = null
     this.layout()
     if (play) this.opts.onPlay?.(d.id)

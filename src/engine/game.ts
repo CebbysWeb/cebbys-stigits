@@ -6,6 +6,9 @@ export const MAX_PLAYERS = 12
 
 /** Table rules the host picks in the lobby. */
 export type GameMode = 'emptyDeck' | 'rounds'
+/** toPile: the card goes back into the draw pile. discard: the card is out of the game.
+ *  point: lose a point and keep the card. */
+export type MissRule = 'toPile' | 'discard' | 'point'
 
 export interface Settings {
   /** Empty deck: everyone holds 5 and draws from a pile of N cards; most played cards wins once the pile is empty.
@@ -18,15 +21,17 @@ export interface Settings {
   /** Whether players may turn (R/E) and mirror (F) a held card to compare it. */
   rotate: boolean
   mirror: boolean
-  /** A wrong call costs this many points (rounds) or played cards (empty deck). */
+  /** Rounds: points lost for a wrong call. */
   penalty: number
+  /** Empty deck: what a wrong call does with the card. */
+  miss: MissRule
   /** Show the green spots a picked-up stick can go to. */
   hints: boolean
   botSpeed: 'relaxed' | 'normal' | 'quick'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, hints: true, botSpeed: 'normal',
+  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal',
 }
 
 export const PILE_MIN = 10
@@ -259,13 +264,13 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
   if (!ok) {
     const cost = state.settings.penalty
     if (state.settings.mode === 'emptyDeck') {
-      // Played cards are what count here, so a wrong call gives some back (out of the game).
-      for (const card of p.pile.splice(Math.max(0, p.pile.length - cost))) {
-        const at = state.played.findLastIndex((x) => x.card === card)
-        if (at >= 0) state.played.splice(at, 1)
-      }
-      p.score = p.pile.length
-      state.log.push(`${p.name} played a card that does not match${cost ? ` (−${cost} played)` : ''}.`)
+      const rule = state.settings.miss
+      if (rule === 'point') p.score -= 1
+      else p.hand.splice(h, 1)
+      // Back into the pile: someone will draw it again later.
+      if (rule === 'toPile') state.pileLeft += 1
+      state.log.push(`${p.name} played a card that does not match (${
+        rule === 'point' ? '−1' : rule === 'toPile' ? 'back to the pile' : 'discarded'}).`)
     } else {
       p.score -= cost
       state.log.push(`${p.name} played a card that does not match${cost ? ` (−${cost})` : ''}.`)

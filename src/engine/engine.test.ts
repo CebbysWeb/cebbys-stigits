@@ -325,14 +325,15 @@ describe('full games', () => {
     expect(end.players.every((p) => p.score === p.pile.length)).toBe(true)
   })
 
-  it('empty deck: a wrong call gives back a played card', () => {
-    const s = newGame(players, { rounds: 1, seed: 5 })
-    s.players[0].pile = [50, 51]
-    s.players[0].score = 2
-    const wrong = s.players[0].hand.find((c) => SHAPE_CANON[c] !== canonical(s.pattern))!
-    const next = claim(s, 'a', wrong)
-    expect(next.players[0].pile).toEqual([50])
-    expect(next.players[0].score).toBe(1)
+  it('empty deck: a wrong card goes back to the pile, is discarded, or costs a point', () => {
+    for (const [miss, inHand, pile, score] of [['toPile', false, 51, 0], ['discard', false, 50, 0], ['point', true, 50, -1]] as const) {
+      const s = newGame(players, { rounds: 1, seed: 5, miss, pile: 50 })
+      const wrong = s.players[0].hand.find((c) => SHAPE_CANON[c] !== canonical(s.pattern))!
+      const next = claim(s, 'a', wrong)
+      expect(next.players[0].hand.includes(wrong)).toBe(inHand)
+      expect(next.pileLeft).toBe(pile)
+      expect(next.players[0].score).toBe(score)
+    }
   })
 
   it('rounds: a round is one turn each, the deck never runs out', () => {
