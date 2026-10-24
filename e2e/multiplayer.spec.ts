@@ -22,7 +22,7 @@ for (const variant of ['two-player'] as const) {
     await guest.click('[data-act=join]')
     await expect(host.locator('.players li')).toHaveCount(2)
     await expect(guest.locator('.lobby-foot')).toContainText('Waiting for the host')
-    await expect(guest.locator('[data-setting=handSize]')).toBeDisabled()
+    await expect(guest.locator('[data-setting=penalty]')).toBeDisabled()
     // Rounds mode, two rounds: the guest sees the host's choice.
     await host.click('.mode:has(input[value=rounds])')
     await host.selectOption('[data-setting=rounds]', '2')

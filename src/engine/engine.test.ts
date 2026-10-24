@@ -75,11 +75,11 @@ describe('legal moves', () => {
 })
 
 describe('big games', () => {
-  it('deals smaller hands so up to 12 players fit the deck', () => {
-    for (const [n, size] of [[6, 5], [7, 4], [9, 4], [10, 3], [12, 3]]) {
-      const s = newGame(Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `P${i}` })), { rounds: 1, seed: 3 })
-      expect(s.players.every((p) => p.hand.length === size)).toBe(true)
-      expect(s.deck.length).toBe(DECK_SIZE - 1 - n * size)
+  it('deals 5 cards to each of up to 12 players, never a duplicate within a hand', () => {
+    const s = newGame(Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, name: `P${i}` })), { rounds: 1, seed: 3 })
+    for (const p of s.players) {
+      expect(p.hand.length).toBe(5)
+      expect(new Set(p.hand).size).toBe(5)
     }
     expect(() => newGame(Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, name: `P${i}` })), { rounds: 1 })).toThrow()
   })
@@ -87,10 +87,20 @@ describe('big games', () => {
 
 describe('table settings', () => {
   const two = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]
-  it('deals the chosen hand size and trims the deck to hands + N', () => {
-    const s = newGame(two, { rounds: 1, seed: 2, handSize: 4, extraCards: 10 })
-    expect(s.players.map((p) => p.hand.length)).toEqual([4, 4])
-    expect(s.deck.length).toBe(10)
+  it('empty deck: the pile holds N cards on top of the hands, even more than one deck', () => {
+    let s = newGame(two, { rounds: 1, seed: 2, pile: 120 })
+    expect(s.pileLeft).toBe(120)
+    let drawn = 0
+    while (s.phase === 'playing') {
+      const p = s.players[s.current]
+      // Play away the whole hand each turn, so the pile empties quickly.
+      drawn += p.hand.length
+      p.pile.push(...p.hand.splice(0))
+      s = applyAction(s, { type: 'endTurn', playerId: p.id })
+      for (const q of s.players) expect(new Set(q.hand).size).toBe(q.hand.length)
+    }
+    expect(s.pileLeft).toBe(0)
+    expect(drawn).toBe(120)
   })
   it('uses the chosen wrong-call penalty', () => {
     for (const penalty of [0, 2]) {
@@ -249,9 +259,9 @@ describe('turns', () => {
     expect(s.phase).toBe('playing')
   })
 
-  it('ends the round when the deck cannot refill everyone', () => {
+  it('ends the game when the pile runs out', () => {
     let s = moveTo(newGame(players, { rounds: 1, seed: 5 }))
-    s.deck = s.deck.slice(0, 2)
+    s.pileLeft = 2
     s.players[0].hand = s.players[0].hand.slice(0, 2)
     s = end(s)
     expect(s.phase).toBe('gameOver')
@@ -311,7 +321,7 @@ describe('full games', () => {
     const end = play(newGame(players, { rounds: 3, seed: 42 }))
     expect(end.phase).toBe('gameOver')
     expect(end.round).toBe(1)
-    expect(end.deck.length).toBeLessThan(2 * 5)
+    expect(end.pileLeft).toBe(0)
     expect(end.players.every((p) => p.score === p.pile.length)).toBe(true)
   })
 

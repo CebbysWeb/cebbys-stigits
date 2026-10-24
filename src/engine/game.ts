@@ -4,22 +4,17 @@ import { DECK_SIZE, SHAPES, SHAPE_CANON } from './shapes'
 export const HAND_SIZE = 5
 export const MAX_PLAYERS = 12
 
-/** Cards each player holds by default: fewer in big games so the 55-card deck still lasts. */
-export const autoHandSize = (players: number): number => (players <= 6 ? HAND_SIZE : players <= 9 ? 4 : 3)
-
 /** Table rules the host picks in the lobby. */
 export type GameMode = 'emptyDeck' | 'rounds'
 
 export interface Settings {
-  /** Empty deck: one deal of a fixed pile; most played cards wins when nothing is left to draw.
+  /** Empty deck: everyone holds 5 and draws from a pile of N cards; most played cards wins once the pile is empty.
    *  Rounds: the deck never runs out; a round is one turn each; highest score after N rounds wins. */
   mode: GameMode
   /** Rounds mode: how many rounds (one turn per player each). */
   rounds: number
-  /** Cards per player; 0 picks a size from the player count. */
-  handSize: number
-  /** Empty deck: cards in the draw pile beyond the dealt hands; -1 uses the whole deck. */
-  extraCards: number
+  /** Empty deck: cards in the pile to draw from, on top of the 5 dealt to each player. */
+  pile: number
   /** Whether players may turn (R/E) and mirror (F) a held card to compare it. */
   rotate: boolean
   mirror: boolean
@@ -31,16 +26,12 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'emptyDeck', rounds: 3, handSize: 0, extraCards: -1, rotate: true, mirror: true, penalty: 1, hints: true, botSpeed: 'normal',
+  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, hints: true, botSpeed: 'normal',
 }
 
-export const handSizeFor = (s: Settings, players: number): number => s.handSize || autoHandSize(players)
-
-/** Cards in the draw pile at the start of a round (after the pattern card and the deal). */
-export function deckFor(s: Settings, players: number): number {
-  const rest = DECK_SIZE - 1 - players * handSizeFor(s, players)
-  return s.extraCards < 0 || s.mode === 'rounds' ? rest : Math.min(rest, s.extraCards)
-}
+export const PILE_MIN = 10
+export const PILE_MAX = 200
+export const PILE_STEP = 10
 
 export interface Player {
   id: string
@@ -53,9 +44,23 @@ export interface Player {
   score: number
 }
 
-const handSize = (state: GameState): number => handSizeFor(state.settings, state.players.length)
+/**
+ * Draws a card for `p` from the shuffled bag, reshuffling a fresh 55-card deck whenever
+ * it runs dry, so piles larger than one deck work. A player never draws a card they
+ * already hold, but two players may hold the same shape.
+ */
+function drawCard(state: GameState, p: Player): number {
+  let at = state.deck.findLastIndex((c) => !p.hand.includes(c))
+  if (at < 0) {
+    state.deck = shuffle(state, [...Array(DECK_SIZE).keys()])
+    at = state.deck.findLastIndex((c) => !p.hand.includes(c))
+  }
+  return state.deck.splice(at, 1)[0]
+}
 
 export interface GameState {
+  /** Empty deck: cards left in the pile; -1 when it never runs out (rounds). */
+  pileLeft: number
   /** Turn number within the round, starting at 1; goes up only when a player ends their turn. */
   turn: number
   settings: Settings
@@ -124,6 +129,7 @@ export function newGame(players: { id: string; name: string }[], opts: GameOptio
     movesLeft: 1,
     turnMoved: false,
     turn: 1,
+    pileLeft: -1,
     phase: 'playing',
     lastMove: null,
     moveCount: 0,
@@ -143,11 +149,11 @@ function startRound(state: GameState): void {
   const patternCard = state.deck.pop()!
   state.pattern = SHAPES[patternCard].map((s) => ({ ...s }))
   for (const p of state.players) {
-    p.hand = state.deck.splice(-handSize(state), handSize(state))
+    p.hand = []
+    while (p.hand.length < HAND_SIZE) p.hand.push(drawCard(state, p))
     p.pile = []
   }
-  // Cards beyond the chosen deck size sit out this round.
-  state.deck.splice(0, Math.max(0, state.deck.length - deckFor(state.settings, state.players.length)))
+  state.pileLeft = state.settings.mode === 'emptyDeck' ? state.settings.pile : -1
   state.current = (state.round - 1) % state.players.length
   state.movesLeft = 1
   state.turnMoved = false
@@ -208,18 +214,13 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
   const n = state.players.length
   for (let k = 0; k < n; k++) {
     const p = state.players[(state.current + k) % n]
-    while (p.hand.length < handSize(state)) {
-      // In rounds mode the deck never runs out: reshuffle every card nobody holds.
-      if (!state.deck.length && state.settings.mode === 'rounds') {
-        const held = new Set(state.players.flatMap((x) => x.hand))
-        state.deck = shuffle(state, [...Array(DECK_SIZE).keys()].filter((c) => !held.has(c)))
-      }
-      if (!state.deck.length) break
-      p.hand.push(state.deck.pop()!)
+    while (p.hand.length < HAND_SIZE && state.pileLeft !== 0) {
+      p.hand.push(drawCard(state, p))
+      if (state.pileLeft > 0) state.pileLeft -= 1
     }
   }
-  if (state.players.some((p) => p.hand.length < handSize(state))) {
-    state.log.push('The deck ran out.')
+  if (state.pileLeft === 0) {
+    state.log.push('The pile is empty.')
     endRound(state)
     return
   }

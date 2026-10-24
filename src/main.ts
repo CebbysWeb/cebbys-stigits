@@ -1,7 +1,6 @@
 import './style.css'
 import { legalTargets } from './engine/geometry'
-import { allMoves, autoHandSize, deckFor, findMatchingMove, handSizeFor, matchingCard, winnerNames, type GameState, type Settings } from './engine/game'
-import { DECK_SIZE } from './engine/shapes'
+import { allMoves, findMatchingMove, matchingCard, PILE_MAX, PILE_MIN, PILE_STEP, winnerNames, type GameState, type Settings } from './engine/game'
 import { ClientSession, HostSession, isBot, type Session, type Snapshot, MAX_PLAYERS } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
@@ -191,8 +190,6 @@ function renderLobby(s: Snapshot): string {
   const n = s.players.length
   const set = s.settings
   const full = n >= MAX_PLAYERS
-  const hand = handSizeFor(set, n)
-  const deck = deckFor(set, n)
 
   const players = s.players.map((p) => `<li>
       <span class="avatar ${isBot(p.id) ? 'bot' : ''}">${esc(p.name.slice(0, 1).toUpperCase() || '?')}</span>
@@ -210,29 +207,36 @@ function renderLobby(s: Snapshot): string {
     `<input type="checkbox" class="switch" data-setting="${key}" ${set[key] ? 'checked' : ''} ${lock}/>`
   const row = (label: string, hint: string, control: string) =>
     `<label class="setting"><span><b>${label}</b><small>${hint}</small></span>${control}</label>`
-  const maxHand = (h: number) => n * h > DECK_SIZE - 1
 
   const rounds = set.mode === 'rounds'
   const modes: [Settings['mode'], string, string][] = [
-    ['emptyDeck', 'Empty Deck', 'Draw back up each turn until the pile is gone. Most played cards wins.'],
-    ['rounds', 'Rounds', 'Endless deck. A round is one turn each. Highest score after the last round wins.'],
+    ['emptyDeck', 'Empty Deck', 'Refill your hand from a shared pile. When it runs out, most cards played wins.'],
+    ['rounds', 'Rounds', 'Cards never run out. Everyone takes one turn per round. Top score wins.'],
   ]
+  const pile = `<div class="pile-picker">
+      <div class="stepper">
+        <button type="button" data-act="pile-step" data-step="-${PILE_STEP}" aria-label="${PILE_STEP} fewer cards" ${!host || set.pile <= PILE_MIN ? 'disabled' : ''}>−</button>
+        <output id="pile-value"><b>${set.pile}</b><span>cards</span></output>
+        <button type="button" data-act="pile-step" data-step="${PILE_STEP}" aria-label="${PILE_STEP} more cards" ${!host || set.pile >= PILE_MAX ? 'disabled' : ''}>+</button>
+      </div>
+      <input type="range" class="pile-range" min="${PILE_MIN}" max="${PILE_MAX}" step="${PILE_STEP}" value="${set.pile}"
+        data-setting="pile" aria-label="Cards in the pile" style="--fill: ${((set.pile - PILE_MIN) / (PILE_MAX - PILE_MIN)) * 100}%" ${lock}/>
+      <div class="pile-scale"><span>${PILE_MIN}</span><span>${PILE_MAX}</span></div>
+    </div>`
   const settings = `
     <div class="modes" role="radiogroup" aria-label="Game mode">${modes.map(([m, label, about]) => `
       <label class="mode ${set.mode === m ? 'on' : ''}">
         <input type="radio" name="mode" value="${m}" data-setting="mode" ${set.mode === m ? 'checked' : ''} ${lock}/>
         <b>${label}</b><small>${about}</small>
       </label>`).join('')}</div>
-    ${rounds ? row('Rounds', 'One turn for every player per round.', select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
-      : row('Pile', `${hand} in hand per player, ${deck} in pile.`,
-        select('extraCards', [[-1, `All (${DECK_SIZE - 1 - n * hand})`], ...[5, 10, 15, 20, 30].map((x): [number, string] => [x, `${x} cards`])]))}
-    ${row('Cards in hand', `Each player ${rounds ? 'refills to' : 'holds'} ${hand}.`, select('handSize', [[0, `Auto (${autoHandSize(n)})`], ...[3, 4, 5, 6, 7].map((h): [number, string, boolean] => [h, String(h), maxHand(h)])]))}
-    ${row('Rotate cards', 'R / E turn a held card. Off: turn it in your head.', toggle('rotate'))}
-    ${row('Mirror cards', 'F flips a held card. Off: flip it in your head.', toggle('mirror'))}
-    ${rounds ? row('Wrong call', 'Points lost for a card that does not match.', select('penalty', [[0, 'No penalty'], [1, '−1 point'], [2, '−2 points']]))
-      : row('Wrong call', 'Played cards lost for a card that does not match.', select('penalty', [[0, 'No penalty'], [1, 'Lose 1 played'], [2, 'Lose 2 played']]))}
-    ${row('Move hints', 'Show the green spots a stick can go to.', toggle('hints'))}
-    ${row('Bot speed', 'How quickly bots move and spot shapes.', select('botSpeed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['quick', 'Quick']]))}`
+    ${rounds ? row('Rounds', 'Each round, every player takes one turn.', select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
+      : `<div class="setting setting-pile"><span><b>Draw pile</b><small>Everyone starts with 5 cards and refills from this pile.</small></span>${pile}</div>`}
+    ${row('Turn cards', 'Hold a card and press R or E. Off: picture the turn yourself.', toggle('rotate'))}
+    ${row('Flip cards', 'Hold a card and press F. Off: picture the mirror image.', toggle('mirror'))}
+    ${rounds ? row('Wrong guess', 'Points lost for playing a card that doesn’t match.', select('penalty', [[0, 'Nothing'], [1, '1 point'], [2, '2 points']]))
+      : row('Wrong guess', 'Played cards lost for playing one that doesn’t match.', select('penalty', [[0, 'Nothing'], [1, '1 card'], [2, '2 cards']]))}
+    ${row('Move hints', 'Show green spots where a picked-up stick can go.', toggle('hints'))}
+    ${row('Bot speed', 'How fast bots move and spot their shapes.', select('botSpeed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['quick', 'Quick']]))}`
 
   return `<main class="lobby">
     <header class="lobby-head">
@@ -291,7 +295,7 @@ function renderGame(s: Snapshot, g: GameState): string {
 
   return `<main class="game">
     <header>
-      <span>${g.settings.mode === 'rounds' ? `Rounds · Round ${g.round}/${g.roundsTotal}` : `Empty Deck · ${g.deck.length} left to draw`}</span>
+      <span>${g.settings.mode === 'rounds' ? `Rounds · Round ${g.round}/${g.roundsTotal}` : `Empty Deck · ${g.pileLeft} cards in the pile`}</span>
       <span class="code">Code ${s.code}</span>
     </header>
     <aside class="scoreboard">
@@ -358,6 +362,11 @@ app.addEventListener('click', async (e) => {
     case 'host': return connect('host')
     case 'join': return connect('join', el.dataset.code)
     case 'practice': return connect('practice')
+    case 'pile-step': {
+      if (!(session instanceof HostSession) || !snapshot) return
+      const next = snapshot.settings.pile + Number(el.dataset.step)
+      return session.configure({ pile: Math.max(PILE_MIN, Math.min(PILE_MAX, next)) })
+    }
     case 'help':
       helpOpen = !helpOpen
       return render()
@@ -548,6 +557,15 @@ function endDrag(e: PointerEvent, commit: boolean): void {
 
 window.addEventListener('pointerup', (e) => endDrag(e, true))
 window.addEventListener('pointercancel', (e) => endDrag(e, false))
+
+// Dragging the pile slider updates the number live; the setting is sent on release.
+app.addEventListener('input', (e) => {
+  const range = e.target as HTMLInputElement
+  if (!range.classList.contains('pile-range')) return
+  const b = document.querySelector('#pile-value b')
+  if (b) b.textContent = range.value
+  range.style.setProperty('--fill', `${((Number(range.value) - PILE_MIN) / (PILE_MAX - PILE_MIN)) * 100}%`)
+})
 
 app.addEventListener('change', (e) => {
   if (!(session instanceof HostSession)) return
