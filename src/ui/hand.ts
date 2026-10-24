@@ -142,7 +142,7 @@ export class HandView {
     const y = Math.max(-window.innerHeight, Math.min(30, dy < 0 ? dy : dy * 0.4))
     const playing = !!this.opts.onPlay && dy < -PLAY_DISTANCE
     card.classList.toggle('will-play', playing)
-    card.style.transform = `translate(${x}px, ${y}px) rotate(0deg) scale(${playing ? 1.15 : 1.08})`
+    card.style.transform = `translate(${x}px, ${y}px) rotate(0deg) scale(1.5)`
 
     // Move the card to the slot nearest its current position.
     const slots = this.slots(this.order.length)

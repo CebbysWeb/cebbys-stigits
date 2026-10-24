@@ -106,15 +106,15 @@ body:has(.game) { background-color: var(--paper); }
   position: absolute; left: 0; top: 0; aspect-ratio: 1; padding: 8px;
   background: var(--card); border: 3px solid var(--card-border); border-radius: 12px;
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.08), 0 4px 12px rgb(15 23 42 / 0.08); transform-origin: 50% 140%;
-  transition: transform 0.28s cubic-bezier(.2,.8,.3,1.1), opacity 0.28s, box-shadow 0.2s;
+  transition: transform 0.28s cubic-bezier(.2,.8,.3,1.1), scale 0.18s ease, opacity 0.28s, box-shadow 0.2s;
   touch-action: none; cursor: grab;
 }
 .hand-card .card-shape { width: 100%; height: 100%; pointer-events: none; transition: transform 0.22s ease; }
 .hand-card.entering { opacity: 0; }
 .hand-card.leaving { opacity: 0; pointer-events: none; transform: translateY(-120px) scale(0.7) !important; }
-.hand-card.dragging { transition: box-shadow 0.2s; cursor: grabbing; box-shadow: 0 10px 24px rgb(0 0 0 / 0.25); }
+.hand-card.dragging { transition: box-shadow 0.2s, scale 0.18s ease; transform-origin: 50% 50%; cursor: grabbing; box-shadow: 0 10px 24px rgb(0 0 0 / 0.25); }
 @media (hover: hover) {
-  .hand-card:not(.dragging):hover { box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); border-color: var(--accent); }
+  .hand-card:not(.dragging):hover { scale: 1.2; z-index: 90 !important; box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); border-color: var(--accent); }
 }
 .card { background: var(--card); border: 3px solid var(--card-border); border-radius: 10px; padding: 6px; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .card .card-shape { width: 100%; height: 100%; }
