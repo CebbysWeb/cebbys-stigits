@@ -27,13 +27,15 @@ const CARD_SPAN = 6
 export function cardSvg(card: number): string {
   const shape = normalize(SHAPES[card])
   const pts = shape.flatMap(endpoints)
-  // Centre the shape on whole lattice units so it sits on the card's grid lines.
-  const cx = Math.round((Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2)
-  const cy = Math.round((Math.min(...pts.map((p) => -p.y)) + Math.max(...pts.map((p) => -p.y))) / 2)
-  const x0 = cx - CARD_SPAN / 2
-  const y0 = cy - CARD_SPAN / 2
+  // The centre of the sticks' bounding box is the centre of the card.
+  const xs = pts.map((p) => p.x)
+  const ys = pts.map((p) => -p.y)
+  const x0 = (Math.min(...xs) + Math.max(...xs) - CARD_SPAN) / 2
+  const y0 = (Math.min(...ys) + Math.max(...ys) - CARD_SPAN) / 2
+  // Grid lines stay on the lattice, so they may sit half a unit off the card's edges.
   let grid = ''
-  for (let i = 0; i <= CARD_SPAN; i++) grid += `M${x0 + i} ${y0}V${y0 + CARD_SPAN}M${x0} ${y0 + i}H${x0 + CARD_SPAN}`
+  for (let x = Math.ceil(x0); x <= x0 + CARD_SPAN; x++) grid += `M${x} ${y0}V${y0 + CARD_SPAN}`
+  for (let y = Math.ceil(y0); y <= y0 + CARD_SPAN; y++) grid += `M${x0} ${y}H${x0 + CARD_SPAN}`
   return `<svg class="card-shape" viewBox="${x0} ${y0} ${CARD_SPAN} ${CARD_SPAN}" style="--stick: ${cardColor(card)}"><path class="card-grid" d="${grid}"/>${shape.map((s) => stickSvg(s)).join('')}</svg>`
 }
 
