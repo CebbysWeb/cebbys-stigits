@@ -350,6 +350,7 @@ function renderLobby(s: Snapshot): string {
       : missPicker}
     ${row(t.moveHints, t.moveHintsAbout, toggle('hints'))}
     ${row(t.showCards, t.showCardsAbout, toggle('showCards'))}
+    ${rounds ? '' : row(t.handPenalty, t.handPenaltyAbout, toggle('handPenalty'))}
     ${row(t.turnLimit, t.turnLimitAbout, select('turnLimit', [[0, t.noLimit], [30, t.seconds(30)], [60, t.minutes(1)], [120, t.minutes(2)], [180, t.minutes(3)], [300, t.minutes(5)]]))}
     ${row(t.botSpeed, t.botSpeedAbout, select('botSpeed', [['relaxed', t.relaxed], ['normal', t.normal], ['quick', t.quick]]))}`
 

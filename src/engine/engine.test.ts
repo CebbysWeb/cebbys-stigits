@@ -100,8 +100,8 @@ describe('table settings', () => {
       for (const q of s.players) expect(new Set(q.hand).size).toBe(q.hand.length)
     }
     expect(s.pileLeft).toBe(0)
-    // Every card is played: both starting hands plus the whole pile.
-    expect(drawn).toBe(10 + 120)
+    // The pile is drawn dry; the game ends as soon as one hand empties, leaving the other full.
+    expect(drawn).toBe(10 + 120 - 5)
   })
   it('uses the chosen wrong-call penalty', () => {
     for (const penalty of [0, 2]) {
@@ -273,30 +273,25 @@ describe('turns', () => {
     expect(s.current).toBe(1)
   })
 
-  it('a player who plays out their hand is out: their turn ends and they are skipped', () => {
+  it('the first player to play out their hand once the pile is gone ends the game', () => {
     let s = newGame([...players, { id: 'c', name: 'Cy' }], { rounds: 1, seed: 5 })
     s.pileLeft = 0
-    // Ann holds just the card on the grid; playing it empties her hand on her own turn.
     const card = SHAPE_CANON.indexOf(canonical(s.pattern))
-    s.players[0].hand = [card]
-    s = claim(s, s.players[0].id, card)
-    expect(s.phase).toBe('playing')
-    expect(s.current).toBe(1)
-    // Bob ends his turn; Cy is next, and after Cy the turn skips Ann.
-    s = end(s)
-    expect(s.current).toBe(2)
-    s = end(s)
-    expect(s.current).toBe(1)
+    s.players[1].hand = [card]
+    s = claim(s, s.players[1].id, card)
+    expect(s.phase).toBe('gameOver')
   })
 
-  it('ends the game when every hand is played out', () => {
-    let s = newGame(players, { rounds: 1, seed: 5 })
+  it('optionally takes a point per card left in hand', () => {
+    let s = newGame(players, { rounds: 1, seed: 5, handPenalty: true })
     s.pileLeft = 0
-    s.players[1].hand = []
     const card = SHAPE_CANON.indexOf(canonical(s.pattern))
     s.players[0].hand = [card]
+    s.players[1].hand = s.players[1].hand.slice(0, 3)
     s = claim(s, s.players[0].id, card)
     expect(s.phase).toBe('gameOver')
+    expect(s.players[0].score).toBe(1)
+    expect(s.players[1].score).toBe(-3)
   })
 })
 

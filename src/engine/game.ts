@@ -32,10 +32,12 @@ export interface Settings {
   turnLimit: 0 | 30 | 60 | 120 | 180 | 300
   /** Everyone's cards are shown face up to the whole table. */
   showCards: boolean
+  /** Empty Deck: cards still in hand when the game ends cost a point each. */
+  handPenalty: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal', turnLimit: 0, showCards: false,
+  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal', turnLimit: 0, showCards: false, handPenalty: false,
 }
 
 export const PILE_MIN = 10
@@ -253,14 +255,11 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
       if (state.pileLeft > 0) state.pileLeft -= 1
     }
   }
-  if (allOut(state)) {
-    state.log.push('Every card has been played.')
+  if (anyOut(state)) {
     endRound(state)
     return
   }
-  // Players who have played out their hand sit out the rest of the game.
-  do state.current = (state.current + 1) % n
-  while (isOut(state, state.players[state.current]))
+  state.current = (state.current + 1) % n
   state.turn += 1
   // Rounds mode: a round is one turn for every player; the board carries on.
   if (state.settings.mode === 'rounds' && state.turn > n) {
@@ -284,17 +283,15 @@ function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>)
 const isOut = (state: GameState, p: Player): boolean =>
   state.settings.mode === 'emptyDeck' && state.pileLeft === 0 && p.hand.length === 0
 
-/** Empty Deck ends once the pile is gone and every hand has been played out. */
-const allOut = (state: GameState): boolean => state.players.every((p) => isOut(state, p))
+/** Empty Deck ends once the pile is gone and the first player has played out their hand. */
+const anyOut = (state: GameState): boolean => state.players.some((p) => isOut(state, p))
 
-// A player whose last card just left their hand is out: the game ends if everyone
-// is, and otherwise a player out on their own turn hands the turn on.
+// The first player whose last card leaves their hand once the pile is gone ends the game.
 function afterClaim(state: GameState, i: number): void {
   const p = state.players[i]
   if (!isOut(state, p)) return
   state.log.push(`${p.name} has played all their cards.`)
-  if (allOut(state)) endRound(state)
-  else if (i === state.current) endTurn(state, { type: 'endTurn', playerId: p.id })
+  endRound(state)
 }
 
 // Any player may play a card at any time. A match scores +1; a wrong call costs 1
@@ -342,6 +339,11 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
 }
 
 function endRound(state: GameState): void {
+  if (state.settings.mode === 'emptyDeck' && state.settings.handPenalty)
+    for (const p of state.players) if (p.hand.length) {
+      p.score -= p.hand.length
+      state.log.push(`${p.name} loses ${p.hand.length} for cards left in hand.`)
+    }
   state.phase = state.round >= state.roundsTotal ? 'gameOver' : 'roundOver'
   if (state.phase === 'gameOver') state.log.push(`Game over! ${winnerNames(state).join(' & ')} wins.`)
 }
