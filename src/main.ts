@@ -161,7 +161,7 @@ function render(): void {
       if (!view) seatHands.set(p.id, (view = new HandView({ interactive: false, minCard: 30, maxCard: 46, faceDown: true })))
       // Side seats are rotated, so their fan runs along the seat's height.
       const side = holder.closest('.seat-left, .seat-right')
-      if (side) holder.style.width = `${(side as HTMLElement).clientHeight - 8}px`
+      if (side) holder.style.width = `${Math.min(320, (side as HTMLElement).clientHeight - 8)}px`
       holder.append(view.el)
       view.update(p.hand)
     }
@@ -461,10 +461,14 @@ function nudgeSticks(now: number, g: GameState, board: SVGSVGElement): void {
   const idle = now - stickTouchedAt
   if (idle < NUDGE_AFTER_MS || now - nudgedAt < NUDGE_EVERY_MS) return
   nudgedAt = now
-  board.classList.remove('nudge')
-  void board.getBoundingClientRect() // restart the animation
-  board.classList.add('nudge')
-  setTimeout(() => board.classList.remove('nudge'), 1400)
+  // Just two sticks that can actually move, picked at random each time.
+  const movable = [...board.querySelectorAll<SVGGElement>('.stick.pickable')]
+    .filter((el) => legalTargets(g.pattern, Number(el.dataset.stick)).length)
+  for (let i = 0; i < 2 && movable.length; i++) {
+    const el = movable.splice(Math.floor(Math.random() * movable.length), 1)[0]
+    el.classList.add('nudging')
+    setTimeout(() => el.classList.remove('nudging'), 2300)
+  }
 }
 
 function frame(now: number): void {

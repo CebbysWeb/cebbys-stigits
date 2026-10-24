@@ -36,7 +36,7 @@ export class PlayedPile {
     this.el.innerHTML = `${shown.map((c) => {
       const s = scatter(c)
       return `<div class="pile-card" data-card="${c}" style="transform: translate(${s.dx}px, ${s.dy}px) rotate(${s.angle}deg)">${cardSvg(c)}</div>`
-    }).join('')}<span class="pile-count">${count ? `${count} played` : 'Played cards'}</span>`
+    }).join('')}${count ? '' : `<div class="pile-empty"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M12 8v7M9 12l3 3 3-3"/></svg>Drop cards<br/>here</div>`}<span class="pile-count">${count ? `${count} played` : 'Played cards'}</span>`
   }
 
   /**

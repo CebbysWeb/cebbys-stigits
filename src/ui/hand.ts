@@ -101,7 +101,9 @@ export class HandView {
     const left = margin + (width - (spacing * (n - 1) + this.cardWidth)) / 2
     return Array.from({ length: n }, (_, i) => {
       const t = i - (n - 1) / 2
-      return { x: left + i * spacing, y: Math.abs(t) * Math.abs(t) * 2.2, angle: t * spread }
+      // A gentle arc: the outer cards dip a little lower than a flat fan would.
+      const dip = this.opts.interactive ? 5 : 2.2
+      return { x: left + i * spacing, y: t * t * dip, angle: t * spread }
     })
   }
 
