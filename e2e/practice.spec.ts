@@ -77,11 +77,16 @@ test('drags never get stuck when the screen redraws mid-drag', async ({ browser 
   const lastMove = () => page.evaluate(() => JSON.stringify(window.__stigits!.snapshot()!.game!.lastMove))
 
   for (let round = 0; round < 3; round++) {
-    await expect.poll(myTurn, { timeout: 10_000 }).toBe(true)
+    await expect.poll(myTurn, { timeout: 30_000 }).toBe(true)
     const before = await lastMove()
     await dragStick(page)
     await expect.poll(lastMove).not.toBe(before)
     if (await page.evaluate(() => window.__stigits!.snapshot()!.game!.phase) !== 'playing') break
+    // Out of moves (unless I matched), so end the turn with the button.
+    if (await page.evaluate(() => window.__stigits!.snapshot()!.game!.movesLeft) < 1) {
+      await page.click('[data-act=end-turn]')
+      await expect.poll(myTurn).toBe(false)
+    }
 
     // The bot moves while I hold a card: the redraw must not leave the card stuck.
     const order = await page.evaluate(() => window.__stigits!.handOrder())
@@ -143,4 +148,47 @@ test('cards are square and a held card turns with R / E and mirrors with F', asy
   await page.mouse.up()
   // The orientation sticks after letting go.
   expect(await transform()).toBe('scaleX(-1) rotate(0deg)')
+})
+
+test('played cards fly from the hand that played them onto the pile', async ({ browser }) => {
+  test.setTimeout(240_000)
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage()
+  await page.goto(BASE)
+  await page.click('[data-act=practice]')
+  await page.selectOption('#rounds', '1')
+  await page.click('[data-act=start]')
+  await page.waitForTimeout(700)
+
+  const state = () => page.evaluate(() => {
+    const g = window.__stigits!.snapshot()!.game!
+    const me = g.players.find((x) => x.id === window.__stigits!.myId())!
+    return { phase: g.phase, played: g.played, match: me.hand.find((c) => window.__stigits!.matches(c)) }
+  })
+  let sawMine = false
+  let sawBot = false
+  for (let i = 0; i < 2000 && !(sawMine && sawBot); i++) {
+    const s = await state()
+    if (s.phase !== 'playing') break
+    if (!sawMine && s.match !== undefined) {
+      await playCardByDrag(page, s.match)
+      // The card is in the air, then lands as the top of the pile.
+      await expect(page.locator('.pile-card.flying')).toHaveCount(1)
+      await page.screenshot({ path: 'e2e/results/card-flying.png' })
+      await expect(page.locator('.pile-card.flying')).toHaveCount(0)
+      await expect(page.locator('.pile .pile-card').last()).toHaveAttribute('data-card', String(s.match))
+      await expect(page.locator('.pile-count')).toHaveText(`${s.played.length + 1} played`)
+      sawMine = true
+      continue
+    }
+    // Watch for a bot's play: its card flies too.
+    if (!sawBot && (await page.locator('.pile-card.flying').count())) {
+      const latest = (await state()).played.at(-1)!
+      if (latest.player !== 0) sawBot = true
+    }
+    if (s.match === undefined) await page.evaluate(() => window.__stigits!.autoMove())
+    else await page.evaluate(() => window.__stigits!.autoClaim())
+    await page.waitForTimeout(60)
+  }
+  expect(sawMine).toBe(true)
+  expect(sawBot).toBe(true)
 })

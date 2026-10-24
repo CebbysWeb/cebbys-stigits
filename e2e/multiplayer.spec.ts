@@ -5,7 +5,7 @@ import { center, dragStick } from './helpers'
 // Needs internet access for the public PeerJS signaling server.
 const BASE = process.env.E2E_URL ?? 'http://localhost:4173/'
 
-for (const variant of ['standard', 'plus'] as const) {
+for (const variant of ['two-player'] as const) {
   test(`full ${variant} game between two windows`, async ({ browser }) => {
     test.setTimeout(180_000)
     const host = await (await browser.newContext()).newPage()
@@ -22,8 +22,6 @@ for (const variant of ['standard', 'plus'] as const) {
     await guest.click('[data-act=join]')
     await expect(host.locator('.players li')).toHaveCount(2)
     await expect(guest.locator('.status')).toContainText('Waiting for the host')
-
-    await host.selectOption('#variant', variant)
     await host.selectOption('#rounds', '2')
     await host.click('[data-act=start]')
     await expect(guest.locator('.board')).toBeVisible()
@@ -54,7 +52,10 @@ for (const variant of ['standard', 'plus'] as const) {
       const mids = window.__stigits!.snapshot()!.game!.pattern.map((s) => (s.d === 'H' ? [s.x + 0.5, -s.y] : [s.x, -s.y - 0.5]))
       const cx = mids.reduce((a, m) => a + m[0], 0) / mids.length
       const cy = mids.reduce((a, m) => a + m[1], 0) / mids.length
-      return Math.hypot(x + w / 2 - cx, y + h / 2 - cy)
+      // The visible play area starts right of the scoreboard; its centre is what follows the sticks.
+      const covered = document.querySelector('.scoreboard')!.getBoundingClientRect().right
+      const shift = (covered / 2) * (w / window.innerWidth)
+      return Math.hypot(x + w / 2 + shift - cx, y + h / 2 - cy)
     })
     const box = (await host.locator('.board').boundingBox())!
     await host.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.45)

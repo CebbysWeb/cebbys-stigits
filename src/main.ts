@@ -2,8 +2,9 @@ import './style.css'
 import { legalTargets } from './engine/geometry'
 import { allMoves, findMatchingMove, matchingCard, winnerNames, type GameState } from './engine/game'
 import { ClientSession, HostSession, isBot, type Session, type Snapshot } from './net/session'
-import { boardSvg, cardSvg, matchstick, midpoint } from './ui/svg'
+import { boardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
+import { PlayedPile } from './ui/pile'
 import type { Stick } from './engine/geometry'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -11,7 +12,8 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 let session: Session | null = null
 let snapshot: Snapshot | null = null
 let selected: number | null = null
-const hand = new HandView({ interactive: true, minCard: 64, maxCard: 110, onPlay: playCard })
+const pile = new PlayedPile()
+const hand = new HandView({ interactive: true, minCard: 76, maxCard: 140, onPlay: playCard })
 
 /** Call a card: it scores if it matches the grid right now, and costs a point if not. */
 function playCard(card: number): void {
@@ -67,15 +69,26 @@ const events = {
     const prevClaim = snapshot?.game?.lastClaim?.seq
     snapshot = s
     const c = s.game?.lastClaim
+    // A correctly played card flies from the hand that played it to the pile.
+    // Find it in its hand now, before the redraw removes it.
+    let flight: { card: number; from: DOMRect; opacity: number } | null = null
     if (c && c.seq !== prevClaim && s.game) {
       const who = s.game.players[c.player]
       const mine = who.id === session?.myId
       toast(c.ok ? `${mine ? 'Match! ' : `${who.name} matched! `}+1` : `${mine ? 'Not a match' : `${who.name} missed`} −1`)
       if (mine && !c.ok) hand.flash(c.card, 'wrong')
+      const el = c.ok ? document.querySelector<HTMLElement>(`.hand-card[data-card="${c.card}"]`) : null
+      if (el) {
+        const fan = el.closest<HTMLElement>('.fan')
+        flight = { card: c.card, from: el.getBoundingClientRect(), opacity: fan ? Number(getComputedStyle(fan).opacity) : 1 }
+        el.style.visibility = 'hidden'
+      }
     }
     if (s.game?.lastMove !== prevMove) selected = null
     // Rebuilding the board mid-drag would drop the stick; endDrag renders instead.
     if (!drag) render()
+    else pile.update(s.game?.played.map((p) => p.card) ?? [])
+    if (flight) pile.fly(flight.card, flight.from, flight.opacity)
   },
   onError: toast,
   onDisconnect() {
@@ -124,11 +137,13 @@ function render(): void {
       slot.replaceWith(hand.el)
       hand.update(me.hand)
     }
+    app.querySelector('#pile-slot')?.replaceWith(pile.el)
+    pile.update(g.played.map((p) => p.card))
     for (const p of g.players) {
       const holder = app.querySelector<HTMLElement>(`.seat-fan[data-seat="${CSS.escape(p.id)}"]`)
       if (!holder) continue
       let view = seatHands.get(p.id)
-      if (!view) seatHands.set(p.id, (view = new HandView({ interactive: false, minCard: 30, maxCard: 46 })))
+      if (!view) seatHands.set(p.id, (view = new HandView({ interactive: false, minCard: 30, maxCard: 46, faceDown: true })))
       // Side seats are rotated, so their fan runs along the seat's height.
       const side = holder.closest('.seat-left, .seat-right')
       if (side) holder.style.width = `${side.clientHeight - 8}px`
@@ -175,14 +190,11 @@ function renderLobby(s: Snapshot): string {
     </section>`}
     <section><h2>Players (${s.players.length}/4)</h2><ul class="players">${players.join('')}</ul></section>
     ${host ? `<section class="options">
-      <label>Variant <select id="variant">
-        <option value="standard" ${s.variant === 'standard' ? 'selected' : ''}>Standard</option>
-        <option value="plus" ${s.variant === 'plus' ? 'selected' : ''}>Plus</option></select></label>
       <label>Rounds <select id="rounds">${[1, 2, 3, 5, 7].map((n) => `<option ${n === s.rounds ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       ${s.players.length < 4 ? '<button data-act="add-bot">Add a bot 🤖</button>' : ''}
       <button class="primary" data-act="start" ${s.players.length < 2 ? 'disabled' : ''}>Start game</button>
       ${s.players.length < 2 ? '<p class="hint">Waiting for a friend to join, or add a bot…</p>' : ''}
-    </section>` : `<p class="status">Waiting for the host to start (${s.variant === 'plus' ? 'Plus' : 'Standard'}, ${s.rounds} rounds)…</p>`}
+    </section>` : `<p class="status">Waiting for the host to start (${s.rounds} rounds)…</p>`}
   </main>`
 }
 
@@ -191,9 +203,10 @@ function renderGame(s: Snapshot, g: GameState): string {
   const myTurn = g.phase === 'playing' && g.current === me
   const targets = myTurn && selected !== null ? legalTargets(g.pattern, selected) : []
   const turnText = g.phase !== 'playing' ? 'Round over'
-    : myTurn ? (selected === null ? 'Your turn — drag a stick to a new spot' : 'Drop it on a green spot')
+    : myTurn ? (g.movesLeft < 1 ? 'Play a matching card to move again — or end your turn'
+      : selected !== null ? 'Drop it on a green spot'
+      : g.turnMoved ? 'Match! Move another stick' : 'Your turn — move a stick, or play a card if one already matches')
     : `${esc(g.players[g.current].name)} is moving…`
-  const scoreLabel = 'pts'
 
   // Seats follow turn order clockwise from me: the next player sits on my left.
   const seat = (i: number) => {
@@ -202,28 +215,39 @@ function renderGame(s: Snapshot, g: GameState): string {
     const pos = i === me ? 'bottom' : SEAT_LAYOUT[g.players.length][(i - me + g.players.length) % g.players.length - 1]
     return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
       <div class="seat-label"><b>${esc(p.name)}${i === me ? ' (you)' : ''}</b>${online ? '' : ' <span class="off">offline</span>'}
-        <span class="meta">${p.hand.length} cards · ${g.variant === 'plus' ? `${p.pile.length} played · ` : ''}${p.score} ${scoreLabel}</span></div>
+</div>
       ${i === me
         ? (p.hand.length ? '<div id="hand-slot"></div>' : '<p class="hint">No cards left!</p>')
         : `<div class="seat-fan" data-seat="${esc(p.id)}"></div>`}
     </div>`
   }
 
-  const lastPlays = g.lastPlayed.map((p) => `<div class="card played" title="${esc(g.players[p.player].name)}">${cardSvg(p.card)}<span>${esc(g.players[p.player].name)}</span></div>`).join('')
 
   return `<main class="game">
     <header>
-      <span>Round ${g.round}/${g.roundsTotal} · ${g.variant === 'plus' ? 'Plus' : 'Standard'} · Deck ${g.deck.length}</span>
+      <span>Round ${g.round}/${g.roundsTotal} · Deck ${g.deck.length}</span>
       <span class="code">Code ${s.code}</span>
     </header>
+    <aside class="scoreboard">
+      <h2>Scores</h2>
+      <ol>${g.players.map((p, i) => {
+        const online = s.players.find((x) => x.id === p.id)?.connected !== false
+        return `<li class="${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''}">
+          <span class="sb-name">${esc(p.name)}${i === me ? ' (you)' : ''}${online ? '' : ' <span class="off">offline</span>'}</span>
+          <span class="sb-score">${p.score}</span>
+          <span class="sb-meta">${p.pile.length} played · ${p.hand.length} in hand</span>
+        </li>`
+      }).join('')}</ol>
+    </aside>
     <section class="table-layout">
       ${g.players.map((_, i) => (i === me ? '' : seat(i))).join('')}
       <div class="table">
         <p class="turn ${myTurn ? 'mine' : ''}">${turnText}</p>
         ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn }, camViewBox(g))}
-        ${lastPlays ? `<div class="last"><span>Just matched:</span>${lastPlays}</div>` : ''}
       </div>
       ${seat(me)}
+      <div id="pile-slot"></div>
+      ${myTurn ? '<button class="primary end-turn" data-act="end-turn">End turn</button>' : ''}
     </section>
     <p class="play-hint">Spot one of your shapes? Drag the card up to play it: +1 if it matches, −1 if not. While holding a card: R / E turn it, F mirrors it.</p>
     <details class="log"><summary>Game log</summary><ol>${g.log.slice(-30).reverse().map((l) => `<li>${esc(l)}</li>`).join('')}</ol></details>
@@ -235,10 +259,10 @@ function renderRoundOver(g: GameState): string {
   const host = session instanceof HostSession
   const over = g.phase === 'gameOver'
   const rows = [...g.players].sort((a, b) => b.score - a.score)
-    .map((p) => `<tr><td>${esc(p.name)}</td><td>${g.variant === 'plus' ? p.pile.length : p.hand.length}</td><td>${p.score}</td></tr>`)
+    .map((p) => `<tr><td>${esc(p.name)}</td><td>${p.pile.length}</td><td>${p.score}</td></tr>`)
   return `<div class="overlay"><div class="dialog">
     <h2>${over ? `🏆 ${winnerNames(g).map(esc).join(' & ')} wins!` : `Round ${g.round} over`}</h2>
-    <table><thead><tr><th>Player</th><th>${g.variant === 'plus' ? 'Played' : 'Left in hand'}</th><th>Total</th></tr></thead><tbody>${rows.join('')}</tbody></table>
+    <table><thead><tr><th>Player</th><th>Played this round</th><th>Total</th></tr></thead><tbody>${rows.join('')}</tbody></table>
     ${host ? (over ? '<button class="primary" data-act="lobby">Back to lobby</button>' : '<button class="primary" data-act="next">Next round</button>')
       : `<p class="hint">Waiting for the host…</p>`}
   </div></div>`
@@ -251,6 +275,7 @@ app.addEventListener('click', async (e) => {
     case 'host': return connect('host')
     case 'join': return connect('join', el.dataset.code)
     case 'practice': return connect('practice')
+    case 'end-turn': return session!.send({ type: 'endTurn', playerId: session!.myId })
     case 'add-bot': return (session as HostSession).addBot()
     case 'remove': return (session as HostSession).removePlayer(el.dataset.id!)
     case 'join-code': {
@@ -303,7 +328,10 @@ function camViewBox(g: GameState): string {
     cam.ready = true
   }
   const h = cam.w * boardAspect()
-  return `${cam.x - cam.w / 2} ${cam.y - h / 2} ${cam.w} ${h}`
+  // The scoreboard covers the left edge, so centre the sticks in the space beside it.
+  const covered = document.querySelector<HTMLElement>('.scoreboard')?.getBoundingClientRect().right ?? 0
+  const shift = (covered / 2) * (cam.w / Math.max(1, window.innerWidth))
+  return `${cam.x - cam.w / 2 - shift} ${cam.y - h / 2} ${cam.w} ${h}`
 }
 
 let lastFrame = performance.now()
@@ -416,7 +444,7 @@ function updateDrag(board: SVGSVGElement, e: PointerEvent): void {
   const dir = snapshot!.game!.pattern[d.index].d
   const floating: Stick = dir === 'H' ? { x: at.x - 0.5, y: at.y, d: 'H' } : { x: at.x, y: at.y - 0.5, d: 'V' }
   const shown = d.snap !== null ? d.targets[d.snap] : floating
-  board.querySelector('.drag-layer')!.innerHTML = matchstick(shown, `class="stick held ${d.snap !== null ? 'snapped' : ''}"`)
+  board.querySelector('.drag-layer')!.innerHTML = stickSvg(shown, `class="stick held ${d.snap !== null ? 'snapped' : ''}"`)
 }
 
 function endDrag(e: PointerEvent, commit: boolean): void {
@@ -437,10 +465,8 @@ window.addEventListener('pointercancel', (e) => endDrag(e, false))
 app.addEventListener('change', (e) => {
   if (!(session instanceof HostSession)) return
   const id = (e.target as Element).id
-  if (id === 'variant' || id === 'rounds') {
-    const variant = document.querySelector<HTMLSelectElement>('#variant')!.value as 'standard' | 'plus'
-    const rounds = Number(document.querySelector<HTMLSelectElement>('#rounds')!.value)
-    session.configure(variant, rounds)
+  if (id === 'rounds') {
+    session.configure(Number(document.querySelector<HTMLSelectElement>('#rounds')!.value))
   }
 })
 
@@ -481,6 +507,10 @@ window.__stigits = {
   autoMove: () => {
     const g = snapshot?.game
     if (!g || !session || g.phase !== 'playing' || g.players[g.current].id !== session.myId) return false
+    if (g.movesLeft < 1) {
+      session.send({ type: 'endTurn', playerId: session.myId })
+      return true
+    }
     const moves = allMoves(g)
     const move = findMatchingMove(g) ?? moves[Math.floor(Math.random() * moves.length)]
     session.send({ type: 'move', playerId: session.myId, ...move })

@@ -19,6 +19,8 @@ export interface HandOptions {
   maxCard: number
   /** Called when the player drags a card up out of the hand to play it. */
   onPlay?: (card: number) => void
+  /** Show card backs instead of shapes (other players' hands). */
+  faceDown?: boolean
 }
 
 /** How far (px) a card must be dragged upwards to play it on release. */
@@ -72,7 +74,7 @@ export class HandView {
       const card = document.createElement('div')
       card.className = 'hand-card entering'
       card.dataset.card = String(id)
-      card.innerHTML = cardSvg(id)
+      card.innerHTML = this.opts.faceDown ? '<div class="card-back"></div>' : cardSvg(id)
       this.el.append(card)
       this.cards.set(id, card)
     }
@@ -88,7 +90,7 @@ export class HandView {
     // Keep a margin so the outer cards' tilt does not swing them off screen.
     const margin = this.opts.interactive ? 18 : 4
     const width = (this.el.clientWidth || 320) - margin * 2
-    this.cardWidth = Math.max(this.opts.minCard, Math.min(this.opts.maxCard, width / 4))
+    this.cardWidth = Math.max(this.opts.minCard, Math.min(this.opts.maxCard, width / 3.4))
     const spacing = n > 1 ? Math.min(this.cardWidth * 0.82, (width - this.cardWidth) / (n - 1)) : 0
     const spread = Math.min(7, 36 / Math.max(n, 1))
     const left = margin + (width - (spacing * (n - 1) + this.cardWidth)) / 2

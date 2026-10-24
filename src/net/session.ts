@@ -1,5 +1,5 @@
 import Peer, { type DataConnection } from 'peerjs'
-import { allMoves, applyAction, findMatchingMove, matchingCard, newGame, type Action, type GameState, type Variant } from '../engine/game'
+import { allMoves, applyAction, findMatchingMove, matchingCard, newGame, type Action, type GameState } from '../engine/game'
 
 const PEER_PREFIX = 'cebbys-stigits-'
 export const HOST_ID = 'host'
@@ -14,6 +14,8 @@ const BOT_MOVE_MS = [2000, 3500]
 // a bot that just made its own shape knows it and calls it quickly.
 const BOT_SPOT_MS = [1500, 3500]
 const BOT_OWN_SHAPE_MS = [400, 900]
+// Out of moves, a bot waits a moment (others may still call the shape) and ends its turn.
+const BOT_END_TURN_MS = [1200, 2000]
 const between = ([min, max]: number[]) => min + Math.random() * (max - min)
 export const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX)
 
@@ -25,7 +27,6 @@ export interface LobbyPlayer {
 export interface Snapshot {
   code: string
   players: LobbyPlayer[]
-  variant: Variant
   rounds: number
   game: GameState | null
 }
@@ -108,7 +109,6 @@ export class HostSession implements Session {
     this.snapshot = {
       code,
       players: [{ id: HOST_ID, name, connected: true }],
-      variant: 'standard',
       rounds: 3,
       game: null,
     }
@@ -142,20 +142,28 @@ export class HostSession implements Session {
     this.publish()
   }
 
-  // Bots take a matching move when they have one, otherwise a random legal move.
+  // On a bot's turn: move while it has moves (making its own shape when it can),
+  // wait while it holds a match it is about to call, and otherwise end the turn.
   private scheduleBot(): void {
     const g = this.snapshot.game
     if (this.botTimer || !g || g.phase !== 'playing' || !isBot(g.players[g.current].id)) return
+    const delay = g.movesLeft > 0 ? BOT_MOVE_MS : BOT_END_TURN_MS
     this.botTimer = window.setTimeout(() => {
       this.botTimer = 0
       const game = this.snapshot.game
       if (!game || game.phase !== 'playing') return
       const bot = game.players[game.current]
       if (!isBot(bot.id)) return
-      const moves = allMoves(game)
-      const move = findMatchingMove(game) ?? moves[Math.floor(Math.random() * moves.length)]
-      this.handle({ type: 'move', playerId: bot.id, ...move })
-    }, between(BOT_MOVE_MS))
+      if (game.movesLeft > 0) {
+        const moves = allMoves(game)
+        const move = findMatchingMove(game) ?? moves[Math.floor(Math.random() * moves.length)]
+        this.handle({ type: 'move', playerId: bot.id, ...move })
+      } else if (matchingCard(bot.hand, game.pattern) >= 0) {
+        this.scheduleBot() // its claim is on the way and will earn another move
+      } else {
+        this.handle({ type: 'endTurn', playerId: bot.id })
+      }
+    }, between(delay))
   }
 
   // Any bot holding the shape on the grid calls it after a pause, if still valid then.
@@ -256,8 +264,7 @@ export class HostSession implements Session {
     this.handle({ ...action, playerId: HOST_ID })
   }
 
-  configure(variant: Variant, rounds: number): void {
-    this.snapshot.variant = variant
+  configure(rounds: number): void {
     this.snapshot.rounds = rounds
     this.publish()
   }
@@ -265,7 +272,7 @@ export class HostSession implements Session {
   start(): void {
     const s = this.snapshot
     s.players = s.players.filter((p) => p.connected)
-    s.game = newGame(s.players, { variant: s.variant, rounds: s.rounds })
+    s.game = newGame(s.players, { rounds: s.rounds })
     this.publish()
   }
 

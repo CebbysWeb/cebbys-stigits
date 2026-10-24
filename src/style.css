@@ -10,9 +10,11 @@
   --head: #b91c1c;
   --ghost: #16a34a;
   --dot: #cdbfa8;
-  --paper: #fbfaf3;
-  --grid-major: rgb(70 130 190 / 0.42);
-  --grid-minor: rgb(70 130 190 / 0.2);
+  --paper: #ffffff;
+  --grid-major: #c4c4c4;
+  --grid-minor: #e8e8e8;
+  --card: #ffffff;
+  --card-border: #f28c28;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -29,9 +31,11 @@
     --head: #ef4444;
     --ghost: #4ade80;
     --dot: #4a3f33;
-    --paper: #1d2228;
-    --grid-major: rgb(120 170 220 / 0.3);
-    --grid-minor: rgb(120 170 220 / 0.13);
+    --paper: #1e1e1e;
+    --grid-major: #4a4a4a;
+    --grid-minor: #2e2e2e;
+    --card: #ffffff;
+    --card-border: #f28c28;
   }
 }
 
@@ -86,13 +90,9 @@ input, select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(-
 .board.panning { cursor: grabbing; }
 .grid-major { stroke: var(--grid-major); stroke-width: 0.022; fill: none; }
 .grid-minor { stroke: var(--grid-minor); stroke-width: 0.012; fill: none; }
-/* Exercise-book paper with a faint grain, behind the whole game screen. */
-body:has(.game) {
-  background-color: var(--paper);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.4 0 0 0 0 0.3 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-.shaft { stroke: var(--wood); stroke-width: 0.12; stroke-linecap: round; }
-.head { fill: var(--head); }
+/* Plain white paper behind the whole game screen. */
+body:has(.game) { background-color: var(--paper); }
+.shaft { stroke: var(--stick, var(--wood)); stroke-width: 0.12; stroke-linecap: round; }
 .stick.moved .shaft { stroke: #f59e0b; }
 .stick.selected { opacity: 0.35; }
 .hit { stroke: transparent; stroke-width: 0.5; cursor: grab; pointer-events: stroke; }
@@ -109,7 +109,7 @@ body:has(.game) {
 .fan { position: relative; width: 100%; user-select: none; -webkit-user-select: none; }
 .hand-card {
   position: absolute; left: 0; top: 0; aspect-ratio: 1; padding: 8px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); border: 3px solid var(--card-border); border-radius: 12px;
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.12); transform-origin: 50% 140%;
   transition: transform 0.28s cubic-bezier(.2,.8,.3,1.1), opacity 0.28s, box-shadow 0.2s;
   touch-action: none; cursor: grab;
@@ -121,7 +121,7 @@ body:has(.game) {
 @media (hover: hover) {
   .hand-card:not(.dragging):hover { box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); border-color: var(--accent); }
 }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.card { background: var(--card); border: 3px solid var(--card-border); border-radius: 10px; padding: 6px; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .card .card-shape { width: 100%; height: 100%; }
 .card.played { border-color: var(--accent); aspect-ratio: auto; }
 .card.played span { font-size: 0.75rem; }
@@ -168,7 +168,7 @@ body:has(.game) {
 .seat-left .seat-label, .seat-right .seat-label { position: absolute; top: 0; z-index: 2; }
 .fan.small { opacity: 0.4; transition: opacity 0.3s; pointer-events: none; }
 .seat.active .fan.small { opacity: 0.75; }
-.fan.small .hand-card { padding: 3px; border-radius: 6px; box-shadow: none; }
+.fan.small .hand-card { padding: 3px; border-radius: 6px; border-width: 2px; box-shadow: none; }
 @media (max-width: 560px) {
   .seat-left, .seat-right { width: 64px; }
   .seat-label { font-size: 0.75rem; }
@@ -188,3 +188,59 @@ body:has(.game) {
   40%, 80% { translate: 8px; }
 }
 .play-hint { position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0; font-size: 0.75rem; color: var(--muted); white-space: nowrap; pointer-events: none; }
+
+/* The shared pile of played cards, to the right of my hand. */
+.pile { position: fixed; right: 28px; bottom: 40px; width: 84px; height: 84px; z-index: 2; pointer-events: none; }
+.pile:empty, .pile .pile-count { font-size: 0.7rem; color: var(--muted); }
+.pile::before { content: ''; position: absolute; inset: 0; border: 2px dashed var(--line); border-radius: 10px; }
+.pile-card {
+  position: absolute; inset: 0; padding: 6px; background: var(--card); border: 3px solid var(--card-border);
+  border-radius: 10px; box-shadow: 0 2px 5px rgb(0 0 0 / 0.15);
+}
+.pile-card .card-shape { width: 100%; height: 100%; }
+.pile-card.flying { position: fixed; inset: auto; z-index: 50; box-shadow: 0 12px 28px rgb(0 0 0 / 0.3); pointer-events: none; }
+.pile-count { position: absolute; left: 50%; bottom: -18px; transform: translateX(-50%); white-space: nowrap; }
+/* Leave room for the pile beside my hand. */
+.seat-bottom .fan { width: calc(100% - 120px); margin-right: 120px; }
+@media (max-width: 560px) {
+  .pile { width: 60px; height: 60px; right: 12px; bottom: 36px; }
+  .seat-bottom .fan { width: calc(100% - 76px); margin-right: 76px; }
+}
+
+.end-turn { position: fixed; right: 20px; bottom: 180px; z-index: 3; pointer-events: auto; pointer-events: auto; box-shadow: 0 4px 12px rgb(0 0 0 / 0.2); }
+@media (max-width: 560px) { .end-turn { right: 8px; bottom: 120px; padding: 8px 12px; } }
+
+/* Back of another player's card: their shapes stay hidden. */
+.card-back {
+  width: 100%; height: 100%; border-radius: 4px;
+  background: repeating-linear-gradient(45deg, var(--accent) 0 4px, color-mix(in srgb, var(--accent) 70%, var(--panel)) 4px 8px);
+  opacity: 0.85;
+}
+
+/* Scoreboard down the left edge; the rest of the table shifts right to make room. */
+:root { --sb-width: 180px; }
+.scoreboard {
+  position: fixed; left: 12px; top: 80px; width: var(--sb-width); z-index: 3;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+}
+.scoreboard h2 { margin: 0 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.scoreboard ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.scoreboard li {
+  display: grid; grid-template-columns: 1fr auto; column-gap: 8px; padding: 6px 8px;
+  border-radius: 8px; border-left: 3px solid transparent;
+}
+.scoreboard li.active { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.scoreboard li.me .sb-name { font-weight: 700; }
+.sb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-score { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; grid-row: span 2; align-self: center; }
+.sb-meta { font-size: 0.72rem; color: var(--muted); }
+.table-layout { padding-left: calc(var(--sb-width) + 24px); }
+.turn, .last { left: calc(50% + var(--sb-width) / 2 + 6px); }
+@media (max-width: 560px) {
+  :root { --sb-width: 96px; }
+  .scoreboard { left: 6px; padding: 6px; top: 84px; }
+  .scoreboard li { padding: 4px; }
+  .sb-meta { display: none; }
+  .table-layout { padding-left: calc(var(--sb-width) + 10px); }
+}

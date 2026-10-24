@@ -1,7 +1,6 @@
 import { canonical, legalTargets, sameStick, type Stick } from './geometry'
 import { DECK_SIZE, SHAPES, SHAPE_CANON } from './shapes'
 
-export type Variant = 'standard' | 'plus'
 export const HAND_SIZE = 5
 
 export interface Player {
@@ -11,18 +10,22 @@ export interface Player {
   hand: number[]
   /** Cards correctly played this round. */
   pile: number[]
-  /** Cumulative score: +1 per correct play, −1 per wrong one (and per card left in Standard). */
+  /** Cumulative score: +1 per correct play, −1 per wrong one. */
   score: number
 }
 
 export interface GameState {
-  variant: Variant
   roundsTotal: number
   round: number
   players: Player[]
   deck: number[]
   pattern: Stick[]
   current: number
+  /** Moves the current player may still make: one per turn, plus one after each of their own matches. */
+  movesLeft: number
+  /** Whether the current player has moved this turn. Moving is optional: a lucky player
+   *  can play a card that already matches without moving at all. */
+  turnMoved: boolean
   phase: 'playing' | 'roundOver' | 'gameOver'
   lastMove: { from: Stick; to: Stick } | null
   /** Counts moves; a claim names the move it saw so a stale claim is not penalised. */
@@ -31,6 +34,8 @@ export interface GameState {
   lastClaim: { player: number; card: number; ok: boolean; seq: number } | null
   /** Cards correctly played since the last move, for UI highlighting. */
   lastPlayed: { player: number; card: number }[]
+  /** Every card correctly played this round, oldest first: the shared played pile. */
+  played: { player: number; card: number }[]
   log: string[]
   rng: number
 }
@@ -38,10 +43,10 @@ export interface GameState {
 export type Action =
   | { type: 'move'; playerId: string; index: number; to: Stick }
   | { type: 'claim'; playerId: string; card: number; seen: number }
+  | { type: 'endTurn'; playerId: string }
   | { type: 'nextRound'; playerId: string }
 
 export interface GameOptions {
-  variant: Variant
   rounds: number
   seed?: number
 }
@@ -65,18 +70,20 @@ function shuffle<T>(state: GameState, items: T[]): T[] {
 export function newGame(players: { id: string; name: string }[], opts: GameOptions): GameState {
   if (players.length < 1 || players.length > 4) throw new Error('Matchstix needs 1–4 players')
   const state: GameState = {
-    variant: opts.variant,
     roundsTotal: Math.max(1, opts.rounds),
     round: 0,
     players: players.map((p) => ({ ...p, hand: [], pile: [], score: 0 })),
     deck: [],
     pattern: [],
     current: 0,
+    movesLeft: 1,
+    turnMoved: false,
     phase: 'playing',
     lastMove: null,
     moveCount: 0,
     lastClaim: null,
     lastPlayed: [],
+    played: [],
     log: [],
     rng: opts.seed ?? Math.floor(Math.random() * 2 ** 31),
   }
@@ -94,9 +101,12 @@ function startRound(state: GameState): void {
     p.pile = []
   }
   state.current = (state.round - 1) % state.players.length
+  state.movesLeft = 1
+  state.turnMoved = false
   state.phase = 'playing'
   state.lastMove = null
   state.lastPlayed = []
+  state.played = []
   state.log.push(`Round ${state.round} begins. ${state.players[state.current].name} starts.`)
 }
 
@@ -115,15 +125,17 @@ export function applyAction(prev: GameState, action: Action): GameState {
   }
   if (state.phase !== 'playing') throw new Error('The round is over')
   if (action.type === 'claim') claim(state, action)
+  else if (action.type === 'endTurn') endTurn(state, action)
   else move(state, action)
   return state
 }
 
-// On your turn you move one stick; the turn then passes on. Nothing is matched
-// automatically: players claim matches themselves.
+// On your turn you move a stick. Playing a matching card earns another move, so a
+// good turn can chain several. Nothing is matched automatically.
 function move(state: GameState, action: Extract<Action, { type: 'move' }>): void {
   const me = state.players[state.current]
   if (me.id !== action.playerId) throw new Error(`It is ${me.name}'s turn`)
+  if (state.movesLeft < 1) throw new Error('Play a matching card to move again, or end your turn')
   if (!Number.isInteger(action.index) || action.index < 0 || action.index >= state.pattern.length)
     throw new Error('No such stick')
   const to = action.to
@@ -135,7 +147,30 @@ function move(state: GameState, action: Extract<Action, { type: 'move' }>): void
   state.lastMove = { from, to: state.pattern[action.index] }
   state.lastPlayed = []
   state.moveCount += 1
-  state.current = (state.current + 1) % state.players.length
+  state.movesLeft -= 1
+  state.turnMoved = true
+}
+
+// Ending a turn refills every hand below five cards, mover first, then passes the
+// turn on. If the deck cannot refill everyone, the round is over.
+function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>): void {
+  const me = state.players[state.current]
+  if (me.id !== action.playerId) throw new Error(`It is ${me.name}'s turn`)
+  const n = state.players.length
+  for (let k = 0; k < n; k++) {
+    const p = state.players[(state.current + k) % n]
+    while (p.hand.length < HAND_SIZE && state.deck.length) p.hand.push(state.deck.pop()!)
+  }
+  if (state.players.some((p) => p.hand.length < HAND_SIZE)) {
+    state.log.push('The deck ran out.')
+    endRound(state)
+    return
+  }
+  state.current = (state.current + 1) % n
+  state.movesLeft = 1
+  state.turnMoved = false
+  state.lastPlayed = []
+  state.log.push(`${state.players[state.current].name}'s turn.`)
 }
 
 // Any player may play a card at any time. A match scores +1; a wrong call costs 1
@@ -160,20 +195,11 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
   p.pile.push(action.card)
   p.score += 1
   state.lastPlayed.push({ player: i, card: action.card })
+  state.played.push({ player: i, card: action.card })
   state.log.push(`${p.name} matched a card (+1).`)
 
-  if (state.variant === 'standard') {
-    if (p.hand.length === 0) {
-      for (const q of state.players) q.score -= q.hand.length
-      state.log.push(`${p.name} emptied their hand!`)
-      endRound(state)
-    }
-  } else if (state.deck.length) {
-    p.hand.push(state.deck.pop()!)
-  } else {
-    state.log.push('The deck is empty.')
-    endRound(state)
-  }
+  // The player whose turn it is earns another move with each match.
+  if (i === state.current) state.movesLeft = 1
 }
 
 function endRound(state: GameState): void {

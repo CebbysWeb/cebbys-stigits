@@ -7,11 +7,19 @@ const line = (s: Stick, attrs: string): string => {
   return `<line x1="${a.x}" y1="${-a.y}" x2="${b.x}" y2="${-b.y}" ${attrs}/>`
 }
 
-/** A matchstick: a wooden shaft with a red head on its second endpoint. */
-export function matchstick(s: Stick, attrs = ''): string {
-  const [, b] = endpoints(s)
-  return `<g ${attrs}>${line(s, 'class="shaft"')}<circle class="head" cx="${b.x}" cy="${-b.y}" r="0.09"/></g>`
+/** Gap left at each end of a stick, so sticks meeting at a point do not overlap. */
+const INSET = 0.13
+
+/** A plain stick, drawn a little short of its endpoints. */
+export function stickSvg(s: Stick, attrs = ''): string {
+  const [a, b] = endpoints(s)
+  const dx = (b.x - a.x) * INSET
+  const dy = (b.y - a.y) * INSET
+  return `<g ${attrs}><line class="shaft" x1="${a.x + dx}" y1="${-(a.y + dy)}" x2="${b.x - dx}" y2="${-(b.y - dy)}"/></g>`
 }
+
+/** Each card's own stick colour: hues spread by the golden angle so neighbours differ. */
+export const cardColor = (card: number): string => `hsl(${Math.round((card * 137.508) % 360)} 70% 42%)`
 
 function viewBox(sticks: Stick[], pad: number): string {
   const pts = sticks.flatMap(endpoints)
@@ -24,7 +32,7 @@ function viewBox(sticks: Stick[], pad: number): string {
 
 export function cardSvg(card: number): string {
   const shape = normalize(SHAPES[card])
-  return `<svg class="card-shape" viewBox="${viewBox(shape, 0.4)}">${shape.map((s) => matchstick(s)).join('')}</svg>`
+  return `<svg class="card-shape" viewBox="${viewBox(shape, 0.4)}" style="--stick: ${cardColor(card)}">${shape.map((s) => stickSvg(s)).join('')}</svg>`
 }
 
 export interface BoardView {
@@ -52,7 +60,7 @@ export function boardSvg(v: BoardView, vb: string): string {
   const sticks = v.pattern.map((s, i) => {
     const cls = ['stick', i === v.selected ? 'selected' : '', v.interactive ? 'pickable' : '',
       v.lastTo && s.x === v.lastTo.x && s.y === v.lastTo.y && s.d === v.lastTo.d ? 'moved' : '']
-    return matchstick(s, `class="${cls.join(' ')}" data-stick="${i}"`) +
+    return stickSvg(s, `class="${cls.join(' ')}" data-stick="${i}"`) +
       (v.interactive ? line(s, `class="hit" data-stick="${i}"`) : '')
   })
   const targets = v.targets.map((t, i) => line(t, `class="ghost" data-ghost="${i}"`))
