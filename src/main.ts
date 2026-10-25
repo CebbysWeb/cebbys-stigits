@@ -66,6 +66,8 @@ let drag: { index: number; pointerId: number; targets: Stick[]; snap: number | n
 let status = ''
 // The opponent whose full name is showing after a tap on their letter (crowded phone table).
 let peekId: string | null = null
+/** The opened hand shown last render, so its slide-in plays only when it first opens. */
+let peekShown: string | null = null
 // The screen wake lock held during a game (see keepAwake).
 let wakeLock: WakeLockSentinel | null = null
 let wantAwake = false
@@ -281,7 +283,13 @@ function render(): void {
       // Side seats are rotated, so their fan runs along the seat's height.
       const side = holder.closest('.seat-left, .seat-right')
       holder.style.setProperty('--back', p.color ?? '')
-      if (side) holder.style.width = `${Math.min(320, (side as HTMLElement).clientHeight - 8)}px`
+      const fit = 80 + 34 * p.hand.length
+      if (side) {
+        const len = Math.min(fit, 320, (side as HTMLElement).clientHeight - 8)
+        holder.style.width = `${len}px`
+        ;(side as HTMLElement).style.setProperty('--fan-len', `${len}px`)
+      }
+      else if (holder.closest('.seat-top:not(.seat-mini)') && !narrow.matches) holder.style.width = `${Math.min(fit, 320)}px`
       view.setFaceDown(!g.settings.showCards)
       holder.append(view.el)
       view.update(p.hand)
@@ -449,6 +457,8 @@ function renderGame(s: Snapshot, g: GameState): string {
   // letter; only the players before, on and after the turn show their cards.
   const n = g.players.length
   const crowded = narrow.matches && n - 1 > 3
+  // While someone else plays, their hand stays open as if tapped; a tap picks another.
+  const shownPeek = peekId ?? (crowded && g.current !== me && g.phase === 'playing' ? g.players[g.current].id : null)
 
   // Seats follow turn order clockwise from me: the next player sits on my left.
   const seat = (i: number) => {
@@ -459,9 +469,10 @@ function renderGame(s: Snapshot, g: GameState): string {
     const out = g.settings.mode === 'emptyDeck' && g.pileLeft === 0 && p.hand.length === 0
     if (crowded && i !== me) {
       const cur = i === g.current
-      return `<div class="seat seat-${pos} seat-mini ${cur ? 'active seat-focus' : ''} ${out ? 'out' : ''} ${peekId === p.id ? 'peek' : ''}" data-act="peek" data-id="${esc(p.id)}" style="--who: ${esc(p.color ?? 'var(--accent)')}">
-        <span class="seat-peek" aria-hidden="${peekId !== p.id}"><b>${esc(p.name)}</b> ${t.points(p.score)}${
-          peekId === p.id && p.hand.length ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}</span>
+      const open = shownPeek === p.id
+      return `<div class="seat seat-${pos} seat-mini ${cur ? 'active seat-focus' : ''} ${out ? 'out' : ''} ${open ? `peek ${peekShown !== p.id ? 'peek-new' : ''}` : ''}" data-act="peek" data-id="${esc(p.id)}" style="--who: ${esc(p.color ?? 'var(--accent)')}">
+        <span class="seat-peek" aria-hidden="${!open}"><b>${esc(p.name)}</b> ${t.points(p.score)}${
+          open && p.hand.length ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}</span>
         <span class="mini-pile ${online ? '' : 'off'}">${miniPile(p.hand, g.settings.showCards)}<span class="mini-letter">${esc([...p.name][0]?.toUpperCase() ?? '?')}</span></span>
         ${cur ? `<span class="seat-name">${esc(p.name)}</span>` : ''}
       </div>`
@@ -482,14 +493,15 @@ function renderGame(s: Snapshot, g: GameState): string {
   }
 
 
+  const sides = ['left', 'top', 'right'].map((side) => {
+    const mine = Array.from({ length: n - 1 }, (_, k) => (me + 1 + k) % n)
+      .filter((_, k) => seatSides(n - 1)[k] === side)
+    return mine.length ? `<div class="side side-${side}">${mine.map(seat).join('')}</div>` : ''
+  }).join('')
+  peekShown = shownPeek
   return `<main class="game">
     <section class="table-layout">
-      ${['left', 'top', 'right'].map((side) => {
-        const n = g.players.length
-        const mine = Array.from({ length: n - 1 }, (_, k) => (me + 1 + k) % n)
-          .filter((_, k) => seatSides(n - 1)[k] === side)
-        return mine.length ? `<div class="side side-${side}">${mine.map(seat).join('')}</div>` : ''
-      }).join('')}
+      ${sides}
       <div class="play-area"></div>
       <div class="table">
         <p class="turn ${myTurn ? 'mine' : ''}">${turnText} <span class="round-chip">${t.turn(g.turn)}</span>${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>

@@ -237,7 +237,7 @@ body:has(.game) { background-color: var(--paper); overflow: hidden; }
 .table-layout .table { grid-area: center; min-width: 0; }
 .play-area { grid-area: center; align-self: stretch; min-width: 0; min-height: 0; }
 .seat { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
-.side { display: flex; gap: 28px; align-self: stretch; min-width: 0; min-height: 0; }
+.side { position: relative; z-index: 1; display: flex; gap: 28px; align-self: stretch; min-width: 0; min-height: 0; }
 .side-top { grid-area: top; justify-content: center; }
 .side-top .seat { flex: 0 1 320px; min-width: 0; }
 /* Clockwise from me: up the left edge, across the top, down the right. */
@@ -598,7 +598,7 @@ body.in-game input, body.in-game textarea { -webkit-user-select: text; user-sele
 
 /* An opponent's card count, beside their points. */
 .cards-left { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: 0.75rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
-.cards-left::before { content: ''; width: 8px; height: 11px; border: 1.5px solid currentColor; border-radius: 2px; }
+.cards-left::after { content: ''; width: 8px; height: 11px; border: 1.5px solid currentColor; border-radius: 2px; }
 
 /* Portrait phones: all opponents share the top row, each a compact chip over a small fan,
    so the board gets the whole middle of the screen. */
@@ -674,11 +674,11 @@ body { overflow-x: clip; }
 .seat-peek:has(.seat-fan) { background: var(--panel); color: var(--ink); }
 .seat-peek:has(.seat-fan) b { color: var(--ink); }
 /* Tapped: the pile opens up into their hand below the row. */
-.seat-mini.peek .mini-pile { opacity: 0.35; }
+.seat-mini.peek .seat-name { visibility: hidden; }
 .seat-mini.out .mini-pile { filter: grayscale(1); opacity: 0.5; }
 .seat-mini.seat-focus .mini-pile { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
 .seat-peek .seat-fan { width: min(70vw, 260px); margin-top: 6px; }
-.seat-mini.peek .seat-peek { animation: peek-in 0.25s cubic-bezier(.2, .9, .3, 1.2); }
+.seat-mini.peek-new .seat-peek { animation: peek-in 0.25s cubic-bezier(.2, .9, .3, 1.2); }
 @keyframes peek-in { from { opacity: 0; margin-top: -12px; } }
 .seat-name { font-size: 0.72rem; font-weight: 700; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Fingers are wider than a mouse pointer: a fatter invisible grab line round each stick. */
@@ -779,3 +779,38 @@ body { overflow-x: clip; }
 .card-tools button:active { transform: scale(0.92); }
 .card-tools svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 @keyframes tools-in { from { opacity: 0; translate: 0 8px; } }
+
+/* Wider screens: each opponent's cards sit on a frosted panel, fully opaque, and every name
+   badge reads on two lines: name and card count, then points. */
+@media (min-width: 561px), (orientation: landscape) {
+  .seat:not(.me) .seat-fan { background: var(--glass); border-radius: 16px; padding: 8px 10px;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: var(--shadow); }
+  .seat:not(.me) .fan.small { opacity: 0.9; }
+  .seat.active:not(.me) .fan.small { opacity: 1; }
+  /* Name on the first line; cards left and points on the second. Badges and panels share one
+     width so every seat reads as the same unit. */
+  .seat-label { display: inline-grid; grid-template-columns: auto auto; justify-content: center; align-items: center;
+    column-gap: 8px; row-gap: 0; border-radius: 12px; line-height: 1.3; min-width: 96px; }
+  .seat-label > b, .seat-label > .turn-timer, .seat-label > .off, .seat-label > .done-badge { grid-column: 1 / -1; justify-self: center; }
+  .seat-label .pts { grid-row: 3; text-align: center; border-left: 0; padding-left: 0; }
+  .seat-label:not(:has(.cards-left)) .pts { grid-column: 1 / -1; }
+  .seat-label .cards-left { grid-row: 3; grid-column: 1; }
+  .seat-label:has(.cards-left) .pts { grid-column: 2; }
+  .side .seat-left .seat-label, .side .seat-right .seat-label { left: 50%; right: auto; transform: translateX(-50%); width: 96px;
+    top: calc(50% - var(--fan-len, 200px) / 2 - 52px); }
+  .seat-left .seat-fan, .seat-right .seat-fan { height: 84px; }
+  .seat-label .cards-left { margin-left: 0; padding-right: 8px; border-right: 1px solid var(--line); }
+}
+
+/* No fog for the player on turn: their panel lights up instead. */
+.seat::before { display: none; }
+@media (min-width: 561px), (orientation: landscape) {
+  /* The cards under each name already show how many are left. */
+  .seat-label .cards-left { display: none; }
+  .seat-label .pts { grid-column: 1 / -1 !important; }
+  /* My hand gets the same panel as everyone else's. */
+  .seat.me #hand-slot { background: var(--glass); border-radius: 20px; padding: 10px 14px 4px;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: var(--shadow); }
+  .seat.active:not(.me) .seat-fan, .seat.me.active #hand-slot {
+    box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(249 115 22 / 0.35), var(--shadow); }
+}
