@@ -840,9 +840,23 @@ body { overflow-x: clip; }
   .seat-left::before, .seat-right::before {
     display: block; content: ''; position: absolute; z-index: -1; opacity: 1; filter: none; animation: none;
     left: 50%; transform: translateX(-50%); width: 96px; right: auto;
-    top: calc(50% - var(--fan-len, 200px) / 2 - 54px); bottom: calc(50% - var(--fan-len, 200px) / 2 - 12px);
+    top: calc(50% - var(--fan-len, 200px) / 2 - 54px); bottom: calc(50% - var(--fan-len, 200px) / 2 - 24px);
   }
   .seat.active.seat-top, .seat.active.me, .seat-left.active::before, .seat-right.active::before {
     box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(249 115 22 / 0.35), var(--shadow);
   }
+}
+
+/* Wider screens: an opponent's cards rest in one pile on a small panel; hovering the seat opens
+   the panel and spreads the pile into their hand. */
+.seat-pile { display: none; }
+@media (min-width: 561px), (orientation: landscape) {
+  .seat:not(.me) .seat-label, .seat:not(.me) .seat-pile, .seat:not(.me) .seat-fan { pointer-events: auto; }
+  .seat:not(.me) .seat-pile { display: block; width: 52px; margin: 8px auto 4px; }
+  .seat:not(.me):not(:hover) .seat-fan { display: none; }
+  .seat:not(.me):hover .seat-pile { display: none; }
+  .side-top .seat-top:not(:hover) { width: auto; min-width: 110px; padding: 6px 14px 10px; }
+  .seat-left:not(:hover), .seat-right:not(:hover) { --fan-len: 64px !important; }
+  .seat-left .seat-pile, .seat-right .seat-pile { position: absolute; top: 50%; left: 50%; margin: 0; transform: translate(-50%, -40%); }
+  .seat-top, .seat-left::before, .seat-right::before, .seat-left .seat-label, .seat-right .seat-label { transition: top 0.2s, bottom 0.2s, width 0.2s; }
 }

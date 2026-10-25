@@ -166,7 +166,10 @@ const events = {
       const el = c.ok ? fanOf?.querySelector<HTMLElement>(`.hand-card:not(.leaving)[data-card="${c.card}"]`) ?? null : null
       if (el) {
         const fan = el.closest<HTMLElement>('.fan')
-        flight = { card: c.card, from: el.getBoundingClientRect(), opacity: fan ? Number(getComputedStyle(fan).opacity) : 1 }
+        // A collapsed seat hides its fan: the card leaves from the pile instead.
+        let from = el.getBoundingClientRect()
+        if (!from.width) from = el.closest('.seat')?.querySelector('.seat-pile')?.getBoundingClientRect() ?? from
+        flight = { card: c.card, from, opacity: fan ? Number(getComputedStyle(fan).opacity) : 1 }
         el.style.visibility = 'hidden'
       }
     }
@@ -491,7 +494,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       ${i === me && myTurn ? `<button class="primary end-turn ${g.turnMoved ? 'blink' : ''}" data-act="end-turn">${t.endTurn}</button>` : ''}
       ${i === me
         ? (p.hand.length ? '<div id="hand-slot"></div>' : `<p class="hint">${g.settings.mode === 'emptyDeck' && g.pileLeft === 0 ? t.allPlayed : t.noCards}</p>`)
-        : `<div class="seat-fan" data-seat="${esc(p.id)}"></div>`}
+        : `<span class="mini-pile seat-pile">${miniPile(p.hand, g.settings.showCards)}</span><div class="seat-fan" data-seat="${esc(p.id)}"></div>`}
     </div>`
   }
 
