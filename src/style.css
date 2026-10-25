@@ -645,35 +645,45 @@ body.in-game input, body.in-game textarea { -webkit-user-select: text; user-sele
 /* clip, not hidden: hidden on html and body turns body into a scroll box and breaks phone scrolling. */
 body { overflow-x: clip; }
 
-/* Crowded phone table: other players shrink to a coloured letter, with their cards shown
-   only next to the turn. */
-.side-top .seat.seat-mini { flex: 0 0 auto; max-width: 72px; min-width: 28px; }
-.side-top .seat.seat-mini:has(.seat-fan) { flex: 1 1 0; }
+/* Crowded phone table: every opponent is a small stack of cards in their colour, their
+   letter on top; the player on turn also shows their name. */
+.side-top:has(.seat-mini) { flex-wrap: nowrap; gap: 4px; justify-content: space-between; align-items: flex-start; }
+.side-top .seat.seat-mini { flex: 0 1 34px; min-width: 22px; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; }
+.side-top .seat.seat-mini.seat-focus { flex: 0 0 auto; max-width: 96px; }
+/* A small pickup-style pile of up to five cards in the opponent's colour, their letter on top. */
+.mini-pile { position: relative; display: block; width: 30px; max-width: 100%; aspect-ratio: 1; margin: 6px 4px 0 0; }
+.seat-focus .mini-pile { width: 40px; }
+.mini-pile.off { opacity: 0.4; }
+.mini-card {
+  position: absolute; inset: 0; border-radius: 6px; background: #fff; border: 2px solid var(--who);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
+}
+.mini-card::after { content: ''; position: absolute; inset: 3px; border-radius: 3px;
+  background: repeating-linear-gradient(45deg, var(--who) 0 3px, transparent 3px 6px); opacity: 0.35; }
+.mini-card:nth-child(2) { transform: translate(1px, -1px) rotate(3deg); }
+.mini-card:nth-child(3) { transform: translate(2px, -2px) rotate(-2deg); }
+.mini-card:nth-child(4) { transform: translate(3px, -3px) rotate(2deg); }
+.mini-card:nth-child(5) { transform: translate(4px, -4px) rotate(-1deg); }
+.mini-pile:not(:has(.mini-card)) { border: 2px dashed var(--line); border-radius: 6px; }
 .seat-letter {
-  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
-  background: var(--who); color: #fff; font-weight: 700; font-size: 0.8rem;
+  display: grid; place-items: center; border-radius: 50%; background: var(--who); color: #fff; font-weight: 700;
   box-shadow: 0 0 0 2px var(--bg), 0 2px 6px rgb(15 23 42 / 0.2); text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
-.seat-letter.off { opacity: 0.4; }
-.seat-mini.out .seat-letter { filter: grayscale(1); opacity: 0.5; }
-.seat-mini .seat-fan { width: 100%; }
-/* The player on turn at a crowded table: name and card count on one line, above their cards. */
-.side-top .seat.seat-focus { flex: 0 0 auto; max-width: 150px; }
-.side-top .seat-focus .seat-label { flex-wrap: nowrap; white-space: nowrap; }
-.side-top .seat-focus .seat-label b { max-width: 84px; }
-.side-top .seat-focus .seat-label .pts { display: none; }
-.side-top .seat-focus .seat-fan { width: 110px; }
-/* Keep a crowded table on one row: letters shrink before anything wraps. */
-.side-top:has(.seat-mini) { flex-wrap: nowrap; gap: 3px; justify-content: space-between; }
-.side-top .seat.seat-mini { flex: 0 1 28px; min-width: 16px; }
-.side-top .seat.seat-mini:has(.seat-fan) { flex: 0 1 56px; }
-.seat-mini .seat-letter { width: 100%; max-width: 26px; height: auto; aspect-ratio: 1; }
-.side-top .seat.seat-focus { max-width: 130px; flex-shrink: 0; }
-.side-top .seat-focus .seat-fan { width: 100px; }
+.mini-pile .seat-letter { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1;
+  width: 20px; height: 20px; font-size: 0.7rem; }
+.seat-mini.out .mini-pile { filter: grayscale(1); opacity: 0.5; }
+.seat-mini.seat-focus .mini-pile { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.seat-peek .seat-fan { width: min(70vw, 260px); margin-top: 6px; }
+.seat-mini.peek .seat-peek { animation: peek-in 0.25s cubic-bezier(.2, .9, .3, 1.2); }
+@keyframes peek-in { from { opacity: 0; margin-top: -12px; } }
+.seat-name { font-size: 0.72rem; font-weight: 700; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Fingers are wider than a mouse pointer: a fatter invisible grab line round each stick. */
 @media (pointer: coarse) { .hit { stroke-width: 0.8; } }
 /* Portrait phones: the played pile sits low, so its caption goes above it, clear of my name. */
-.pile.by-hand .pile-count, .draw-pile.by-hand .pile-count { bottom: auto; top: -20px; font-size: 0.7rem; }
+.pile.by-hand .pile-count, .draw-pile.by-hand .pile-count { bottom: auto; top: -20px; font-size: 0.7rem; transform: none; white-space: nowrap; }
+/* Captions hang inward so the screen edge never cuts them. */
+.draw-pile.by-hand .pile-count { left: 0; right: auto; }
+.pile.by-hand .pile-count { right: 0; left: auto; }
 .segmented.practice-kind { grid-template-columns: 1fr 1fr; margin: 4px 0 2px; }
 
 /* Portrait phones: the opponents' row sits on its own frosted strip above the grid. */

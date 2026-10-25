@@ -66,7 +66,6 @@ let drag: { index: number; pointerId: number; targets: Stick[]; snap: number | n
 let status = ''
 // The opponent whose full name is showing after a tap on their letter (crowded phone table).
 let peekId: string | null = null
-let peekTimer = 0
 // The screen wake lock held during a game (see keepAwake).
 let wakeLock: WakeLockSentinel | null = null
 let wantAwake = false
@@ -450,7 +449,6 @@ function renderGame(s: Snapshot, g: GameState): string {
   // letter; only the players before, on and after the turn show their cards.
   const n = g.players.length
   const crowded = narrow.matches && n - 1 > 3
-  const near = (i: number) => i === g.current || i === (g.current + 1) % n || i === (g.current - 1 + n) % n
 
   // Seats follow turn order clockwise from me: the next player sits on my left.
   const seat = (i: number) => {
@@ -459,21 +457,22 @@ function renderGame(s: Snapshot, g: GameState): string {
     const pos = i === me ? 'bottom' : seatSides(g.players.length - 1)[(i - me + g.players.length) % g.players.length - 1]
     // Empty Deck: with the pile gone, a player without cards has finished.
     const out = g.settings.mode === 'emptyDeck' && g.pileLeft === 0 && p.hand.length === 0
-    if (crowded && i !== me && i !== g.current) {
-      return `<div class="seat seat-${pos} seat-mini ${out ? 'out' : ''} ${peekId === p.id ? 'peek' : ''}" data-act="peek" data-id="${esc(p.id)}">
-        <span class="seat-peek" aria-hidden="${peekId !== p.id}"><b>${esc(p.name)}</b> ${t.points(p.score)} · ${t.cardsInHand(p.hand.length)}</span>
-        <span class="seat-letter ${online ? '' : 'off'}" style="--who: ${esc(p.color ?? 'var(--accent)')}">${esc([...p.name][0]?.toUpperCase() ?? '?')}</span>
-        ${near(i) ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}
+    if (crowded && i !== me) {
+      const cur = i === g.current
+      return `<div class="seat seat-${pos} seat-mini ${cur ? 'active seat-focus' : ''} ${out ? 'out' : ''} ${peekId === p.id ? 'peek' : ''}" data-act="peek" data-id="${esc(p.id)}" style="--who: ${esc(p.color ?? 'var(--accent)')}">
+        <span class="seat-peek" aria-hidden="${peekId !== p.id}"><b>${esc(p.name)}</b> ${t.points(p.score)}${
+          peekId === p.id && g.settings.showCards && p.hand.length ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}</span>
+        <span class="mini-pile ${online ? '' : 'off'}">${'<i class="mini-card"></i>'.repeat(Math.min(5, p.hand.length))}<span class="seat-letter">${esc([...p.name][0]?.toUpperCase() ?? '?')}</span></span>
+        ${cur ? `<span class="seat-name">${esc(p.name)}</span>` : ''}
       </div>`
     }
     return `<div class="seat seat-${pos} ${crowded && i !== me ? 'seat-focus' : ''} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''} ${out ? 'out' : ''}">
       <div class="seat-label" style="--who: ${esc(p.color ?? 'var(--accent)')}">
         ${i === g.current && turnEndsAt && g.phase === 'playing' ? `<span class="turn-timer" title="${t.timeLeft}">${TIMER_ICON}<b>${clock()}</b><i></i></span>` : ''}
-        <b>${esc(p.name)}${i === me ? ` (${t.you})` : ''}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
+        <b>${esc(p.name)}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
         <span class="pts">${t.points(p.score)}</span>
         ${i === me ? '' : `<span class="cards-left" title="${t.cardsInHand(p.hand.length)}">${p.hand.length}</span>`}
         ${out ? `<span class="done-badge">${t.done}</span>` : ''}
-        ${i === g.current ? `<span class="turn-badge">${t.turn(g.turn)}</span>` : ''}
       </div>
       ${i === me && myTurn ? `<button class="primary end-turn ${g.turnMoved ? 'blink' : ''}" data-act="end-turn">${t.endTurn}</button>` : ''}
       ${i === me
@@ -493,7 +492,7 @@ function renderGame(s: Snapshot, g: GameState): string {
       }).join('')}
       <div class="play-area"></div>
       <div class="table">
-        <p class="turn ${myTurn ? 'mine' : ''}">${turnText}${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
+        <p class="turn ${myTurn ? 'mine' : ''}">${turnText} <span class="round-chip">${t.turn(g.turn)}</span>${g.settings.mode === 'rounds' ? ` <span class="round-chip">${t.roundOf(g.round, g.roundsTotal)}</span>` : ''}</p>
         ${boardSvg({ pattern: g.pattern, selected: myTurn ? selected : null, targets, lastTo: g.lastMove?.to ?? null, interactive: myTurn, hints: g.settings.hints, movable: (i) => canMove(g, i) }, camViewBox(g))}
       </div>
       ${seat(me)}
@@ -1015,14 +1014,12 @@ function keepAwake(on: boolean): void {
 // The lock is dropped whenever the page is hidden; take it again on return.
 document.addEventListener('visibilitychange', () => keepAwake(wantAwake))
 
-/** Tap a player's letter: their name slides down below the row for a few seconds (tap again to hide). */
+/** Tap an opponent's pile: their name (and cards, if shown) slide down below the row until
+    the next tap anywhere else. */
 function peek(id: string): void {
   peekId = peekId === id ? null : id
-  clearTimeout(peekTimer)
-  if (peekId) peekTimer = window.setTimeout(() => peek(id), 3500)
-  app.querySelectorAll<HTMLElement>('.seat-mini').forEach((el) => {
-    const on = el.dataset.id === peekId
-    el.classList.toggle('peek', on)
-    el.querySelector('.seat-peek')?.setAttribute('aria-hidden', String(!on))
-  })
+  render()
 }
+document.addEventListener('pointerdown', (e) => {
+  if (peekId && !(e.target as Element).closest?.('.seat-mini')) { peekId = null; render() }
+})
