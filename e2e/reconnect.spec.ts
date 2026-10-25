@@ -55,7 +55,7 @@ test('guest rejoins and host resumes after a reload', async ({ browser }) => {
   expect(await host.evaluate(() => window.__stigits!.snapshot()!.game!.moveCount)).toBe(moves)
 
   // Leaving for good: nothing is offered to resume.
-  host.once('dialog', (d) => d.accept())
   await host.click('[data-act=quit]')
+  await host.click('.confirm [data-a=yes]')
   await expect(host.locator('[data-act=resume]')).toHaveCount(0)
 })

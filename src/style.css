@@ -875,3 +875,13 @@ body { overflow-x: clip; }
   .seat-left::before, .seat-right::before, .seat-left .seat-label, .seat-right .seat-label {
     transition: top 0.35s cubic-bezier(.2, .8, .3, 1.05), bottom 0.35s cubic-bezier(.2, .8, .3, 1.05); }
 }
+
+/* The game's own confirm dialog. */
+.confirm-overlay { z-index: 40; animation: fade-in 0.15s ease-out; }
+.dialog.confirm { width: min(360px, 100%); animation: pop-in 0.2s cubic-bezier(.2, .9, .3, 1.2); }
+.dialog.confirm p { margin: 0; color: var(--ink); font-size: 1rem; line-height: 1.45; }
+.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.confirm-actions button { flex: 1; }
+.primary.danger { background: #dc2626; border-color: #dc2626; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.94); } }

@@ -599,8 +599,9 @@ app.addEventListener('click', async (e) => {
       helpOpen = false
       return render()
     case 'quit':
-      if (!confirm(session instanceof HostSession && session.snapshot.code !== LOCAL_CODE ? t.quitConfirmAll : t.quitConfirm)) return
-      return leaveGame()
+      void askConfirm(session instanceof HostSession && session.snapshot.code !== LOCAL_CODE ? t.quitConfirmAll : t.quitConfirm, t.leave, t.stay)
+        .then((ok) => { if (ok) leaveGame() })
+      return
     case 'peek': return peek(el.dataset.id!)
     case 'end-turn': return session!.send({ type: 'endTurn', playerId: session!.myId })
     case 'add-bot': return (session as HostSession).addBot()
@@ -1064,6 +1065,35 @@ function miniPile(cards: number[], faceUp: boolean): string {
     return `<i class="mini-card" style="--x: ${(h % 5) - 2}px; --y: ${-k * 0.6}px; --r: ${((h >> 8) % 17) - 8}deg">${
       faceUp ? cardSvg(c) : '<div class="card-back"></div>'}</i>`
   }).join('')
+}
+
+/**
+ * The game's own yes/no dialog in place of the browser's confirm(). It lives outside #app so
+ * redraws leave it alone; Escape or a tap outside answers no.
+ */
+function askConfirm(message: string, yes: string, no: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const el = document.createElement('div')
+    el.className = 'overlay confirm-overlay'
+    el.innerHTML = `<div class="dialog confirm" role="alertdialog" aria-modal="true">
+      <p>${esc(message)}</p>
+      <div class="confirm-actions"><button data-a="no">${esc(no)}</button><button class="primary danger" data-a="yes">${esc(yes)}</button></div>
+    </div>`
+    const done = (ok: boolean): void => {
+      document.removeEventListener('keydown', onKey)
+      el.remove()
+      resolve(ok)
+    }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') done(false) }
+    el.addEventListener('click', (e) => {
+      const a = (e.target as HTMLElement).closest<HTMLElement>('[data-a]')?.dataset.a
+      if (a) done(a === 'yes')
+      else if (e.target === el) done(false)
+    })
+    document.addEventListener('keydown', onKey)
+    document.body.append(el)
+    el.querySelector<HTMLButtonElement>('[data-a="no"]')!.focus()
+  })
 }
 
 /** Tap an opponent's pile: their name (and cards, if shown) slide down below the row until
