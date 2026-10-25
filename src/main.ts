@@ -5,7 +5,7 @@ import { guessLang, langPickerHtml, setLang, t, translateError, type Lang } from
 import { playChat, playMove, playMyTurn, playTick, buzz, setSoundOn } from './ui/sfx'
 import { ChatView } from './ui/chat'
 import { ClientSession, forgetSavedGames, HostSession, savedGuestGame, savedHostGame, type NetState, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
-import { boardSvg, midpoint, stickSvg } from './ui/svg'
+import { boardSvg, cardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
 import { PlayedPile } from './ui/pile'
 import { bindColorPicker, colorPickerHtml, loadProfile, loadSettings, profileColor, saveProfile, saveSettings } from './ui/profile'
@@ -461,8 +461,8 @@ function renderGame(s: Snapshot, g: GameState): string {
       const cur = i === g.current
       return `<div class="seat seat-${pos} seat-mini ${cur ? 'active seat-focus' : ''} ${out ? 'out' : ''} ${peekId === p.id ? 'peek' : ''}" data-act="peek" data-id="${esc(p.id)}" style="--who: ${esc(p.color ?? 'var(--accent)')}">
         <span class="seat-peek" aria-hidden="${peekId !== p.id}"><b>${esc(p.name)}</b> ${t.points(p.score)}${
-          peekId === p.id && g.settings.showCards && p.hand.length ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}</span>
-        <span class="mini-pile ${online ? '' : 'off'}">${'<i class="mini-card"></i>'.repeat(Math.min(5, p.hand.length))}<span class="seat-letter">${esc([...p.name][0]?.toUpperCase() ?? '?')}</span></span>
+          peekId === p.id && p.hand.length ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}</span>
+        <span class="mini-pile ${online ? '' : 'off'}">${miniPile(p.hand, g.settings.showCards)}<span class="mini-letter">${esc([...p.name][0]?.toUpperCase() ?? '?')}</span></span>
         ${cur ? `<span class="seat-name">${esc(p.name)}</span>` : ''}
       </div>`
     }
@@ -1013,6 +1013,16 @@ function keepAwake(on: boolean): void {
 }
 // The lock is dropped whenever the page is hidden; take it again on return.
 document.addEventListener('visibilitychange', () => keepAwake(wantAwake))
+
+/** An opponent's hand as a loose pile: one card per card held (the top ten), each nudged and
+    turned a little by its id so the pile keeps its look between redraws. */
+function miniPile(cards: number[], faceUp: boolean): string {
+  return cards.slice(-10).map((c, k) => {
+    const h = (c * 2654435761) >>> 0
+    return `<i class="mini-card" style="--x: ${(h % 5) - 2}px; --y: ${-k * 0.6}px; --r: ${((h >> 8) % 17) - 8}deg">${
+      faceUp ? cardSvg(c) : '<div class="card-back"></div>'}</i>`
+  }).join('')
+}
 
 /** Tap an opponent's pile: their name (and cards, if shown) slide down below the row until
     the next tap anywhere else. */
