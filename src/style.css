@@ -823,3 +823,26 @@ body { overflow-x: clip; }
   .seat:not(.me) .seat-fan, .seat.me > .fan { border-top-left-radius: 12px; border-top-right-radius: 12px; }
   .seat.active .seat-label { box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(249 115 22 / 0.35); clip-path: inset(-30px -30px 0 -30px); }
 }
+
+/* Wider screens: each seat is one panel, name on top and cards below; mine is as wide as five cards. */
+@media (min-width: 561px), (orientation: landscape) {
+  .seat .seat-label { background: none; border: 0; box-shadow: none; margin: 0; padding: 0 4px;
+    -webkit-backdrop-filter: none; backdrop-filter: none; clip-path: none; }
+  .seat.active .seat-label { box-shadow: none; }
+  .seat:not(.me) .seat-fan, .seat.me > .fan { background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0; }
+  .seat.active:not(.me) .seat-fan, .seat.me.active > .fan { box-shadow: none; }
+  .seat-top, .seat.me, .seat-left::before, .seat-right::before {
+    background: var(--glass); border-top: 3px solid var(--who); border-radius: 16px; box-shadow: var(--shadow);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .side-top .seat-top { flex: 0 0 auto; width: calc(var(--fan-len, 220px) + 40px); max-width: none; padding: 6px 20px 12px; }
+  .seat.me { width: min(760px, 100%); justify-self: center; align-self: end; padding: 6px 14px 10px; }
+  .seat-left::before, .seat-right::before {
+    display: block; content: ''; position: absolute; z-index: -1; opacity: 1; filter: none; animation: none;
+    left: 50%; transform: translateX(-50%); width: 96px; right: auto;
+    top: calc(50% - var(--fan-len, 200px) / 2 - 54px); bottom: calc(50% - var(--fan-len, 200px) / 2 - 12px);
+  }
+  .seat.active.seat-top, .seat.active.me, .seat-left.active::before, .seat-right.active::before {
+    box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(249 115 22 / 0.35), var(--shadow);
+  }
+}

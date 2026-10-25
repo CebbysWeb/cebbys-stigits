@@ -289,7 +289,10 @@ function render(): void {
         holder.style.width = `${len}px`
         ;(side as HTMLElement).style.setProperty('--fan-len', `${len}px`)
       }
-      else if (holder.closest('.seat-top:not(.seat-mini)') && !narrow.matches) holder.style.width = `${Math.min(fit, 320)}px`
+      else if (holder.closest('.seat-top:not(.seat-mini)') && !narrow.matches) {
+        holder.style.width = `${Math.min(fit, 320)}px`
+        holder.closest<HTMLElement>('.seat')!.style.setProperty('--fan-len', `${Math.min(fit, 320)}px`)
+      }
       view.setFaceDown(!g.settings.showCards)
       holder.append(view.el)
       view.update(p.hand)
@@ -477,7 +480,7 @@ function renderGame(s: Snapshot, g: GameState): string {
         ${cur ? `<span class="seat-name">${esc(p.name)}</span>` : ''}
       </div>`
     }
-    return `<div class="seat seat-${pos} ${crowded && i !== me ? 'seat-focus' : ''} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''} ${out ? 'out' : ''}">
+    return `<div class="seat seat-${pos} ${crowded && i !== me ? 'seat-focus' : ''} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''} ${out ? 'out' : ''}" style="--who: ${esc(p.color ?? 'var(--accent)')}">
       <div class="seat-label" style="--who: ${esc(p.color ?? 'var(--accent)')}">
         ${i === g.current && turnEndsAt && g.phase === 'playing' ? `<span class="turn-timer" title="${t.timeLeft}">${TIMER_ICON}<b>${clock()}</b><i></i></span>` : ''}
         <b>${esc(p.name)}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
