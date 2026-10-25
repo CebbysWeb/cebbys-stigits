@@ -55,6 +55,9 @@ function seatSides(k: number): string[] {
 // The stick being dragged on the board, and the target it would snap to on release.
 let drag: { index: number; pointerId: number; targets: Stick[]; snap: number | null } | null = null
 let status = ''
+// The screen wake lock held during a game (see keepAwake).
+let wakeLock: WakeLockSentinel | null = null
+let wantAwake = false
 /** When the current turn runs out, on this device's clock; null with no time limit. */
 let turnEndsAt: number | null = null
 
@@ -921,8 +924,6 @@ window.__stigits = {
 render()
 
 // Keep the screen on during a game: a phone that dims and locks drops its connection.
-let wakeLock: WakeLockSentinel | null = null
-let wantAwake = false
 function keepAwake(on: boolean): void {
   wantAwake = on
   if (!on) {
