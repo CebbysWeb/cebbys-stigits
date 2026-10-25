@@ -21,7 +21,7 @@
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
-  color-scheme: only light;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }

@@ -7,8 +7,9 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f8fafc" />
-    <!-- The design is light only: stop Android Chrome from auto-darkening (inverting) it. -->
-    <meta name="color-scheme" content="only light" />
+    <!-- Claim dark support so Samsung Internet and Chrome skip their forced dark (they only
+         darken pages that don't declare a scheme); the stylesheet still pins everything light. -->
+    <meta name="color-scheme" content="light dark" />
     <meta name="description" content="Move one matchstick. Spot your shapes. Play your cards." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
