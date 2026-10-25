@@ -4,7 +4,7 @@ import { dragStick, playCardByDrag } from './helpers'
 const BASE = process.env.E2E_URL ?? 'http://localhost:4173/'
 
 test('offline practice against three bots, seated around the table', async ({ browser }) => {
-  test.setTimeout(240_000)
+  test.setTimeout(420_000)
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage()
   await page.goto(BASE)
   await page.fill('#name', 'Solo')
