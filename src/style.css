@@ -642,4 +642,5 @@ body.in-game input, body.in-game textarea { -webkit-user-select: text; user-sele
 .join-card .row { display: flex; min-width: 0; max-width: 100%; }
 .join-card .row input { flex: 1 1 auto; width: 0; min-width: 0; }
 .join-card .row button { flex: 0 0 auto; }
-html, body { max-width: 100%; overflow-x: hidden; }
+/* clip, not hidden: hidden on html and body turns body into a scroll box and breaks phone scrolling. */
+body { overflow-x: clip; }
