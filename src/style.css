@@ -796,8 +796,8 @@ body { overflow-x: clip; }
   .seat-label:not(:has(.cards-left)) .pts { grid-column: 1 / -1; }
   .seat-label .cards-left { grid-row: 3; grid-column: 1; }
   .seat-label:has(.cards-left) .pts { grid-column: 2; }
-  .side .seat-left .seat-label, .side .seat-right .seat-label { left: 50%; right: auto; transform: translateX(-50%); width: 96px;
-    top: calc(50% - var(--fan-len, 200px) / 2 - 52px); }
+  .side .seat-left .seat-label, .side .seat-right .seat-label { left: 50%; right: auto; transform: translate(-50%, -100%); width: 84px;
+    min-width: 0; top: calc(50% - var(--fan-len, 200px) / 2 - 10px); }
   .seat-left .seat-fan, .seat-right .seat-fan { height: 84px; }
   .seat-label .cards-left { margin-left: 0; padding-right: 8px; border-right: 1px solid var(--line); }
 }
@@ -809,8 +809,17 @@ body { overflow-x: clip; }
   .seat-label .cards-left { display: none; }
   .seat-label .pts { grid-column: 1 / -1 !important; }
   /* My hand gets the same panel as everyone else's. */
-  .seat.me #hand-slot { background: var(--glass); border-radius: 20px; padding: 10px 14px 4px;
+  .seat.me > .fan { background: var(--glass); border-radius: 20px; padding: 10px 14px 4px;
     -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: var(--shadow); }
-  .seat.active:not(.me) .seat-fan, .seat.me.active #hand-slot {
+  .seat.active:not(.me) .seat-fan, .seat.me.active > .fan {
     box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(249 115 22 / 0.35), var(--shadow); }
+}
+
+/* Wider screens: the name badge is the panel's tab, so name and cards read as one block. */
+@media (min-width: 561px), (orientation: landscape) {
+  .seat .seat-label { border: 0; border-top: 3px solid var(--who); border-radius: 14px 14px 0 0; box-shadow: none;
+    background: var(--glass); margin-bottom: -4px; padding: 4px 12px 2px; }
+  .seat-top .seat-label, .seat.me .seat-label { min-width: 120px; }
+  .seat:not(.me) .seat-fan, .seat.me > .fan { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+  .seat.active .seat-label { box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(249 115 22 / 0.35); clip-path: inset(-30px -30px 0 -30px); }
 }
