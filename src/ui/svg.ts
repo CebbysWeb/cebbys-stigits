@@ -19,7 +19,7 @@ export function stickSvg(s: Stick, attrs = ''): string {
 }
 
 /** Each card's own stick colour: hues spread by the golden angle so neighbours differ. */
-export const cardColor = (card: number): string => `hsl(${Math.round((card * 137.508) % 360)} 70% 42%)`
+export const cardColor = (card: number): string => `hsl(${Math.round((card * 137.508) % 360)} 70% var(--card-l, 42%))`
 
 /** Every card uses the same scale: a fixed 6×6 window of lattice, big enough for any pentastick. */
 const CARD_SPAN = 6

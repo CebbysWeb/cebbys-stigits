@@ -700,3 +700,62 @@ body { overflow-x: clip; }
 .setting-wide .segmented:has(label:nth-child(4)) { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 480px) { .setting-wide .segmented:has(label:nth-child(4)) { grid-template-columns: 1fr 1fr; } }
 .setting-wide .segmented { width: 100%; }
+
+/* Theme picker: sun, moon, half circle (follow the device), beside the flags. */
+.prefs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.theme-picker { display: flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--chip); }
+.theme-opt { width: 30px; height: 30px; min-height: 0; padding: 0; border: none; border-radius: 50%; background: none; box-shadow: none; color: var(--muted); display: grid; place-items: center; }
+.theme-opt svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.theme-opt.on { background: var(--panel); color: var(--accent); box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
+.theme-opt:hover:not(:disabled) { box-shadow: none; color: var(--ink); }
+
+/* ---------- Dark theme ---------- */
+:root { --chip: #f1f5f9; --chip-on: #fff; --track: #cbd5e1; --card-l: 42%; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1120;
+  --panel: #131c2e;
+  --ink: #e5e9f0;
+  --muted: #94a3b8;
+  --line: #24314a;
+  --accent: #fb8a3c;
+  --wood: #e2e8f0;
+  --head: #fb7185;
+  --ghost: #34d399;
+  --dot: #334155;
+  --paper: #0b1120;
+  --grid-major: #2a3954;
+  --grid-minor: #172238;
+  --card: #18233a;
+  --card-border: #f97316;
+  --glass: rgb(19 28 46 / 0.78);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+  --chip: #1c2740;
+  --chip-on: #26344f;
+  --track: #334155;
+  /* Card shapes and player colours are lifted so they stay bright on dark. */
+  --card-l: 66%;
+}
+:root[data-theme="dark"] button:hover:not(:disabled) { border-color: #3b4a66; }
+:root[data-theme="dark"] .avatar.bot { background: #26344f; color: #cbd5e1; }
+:root[data-theme="dark"] button.icon:hover:not(:disabled) { background: rgb(251 113 133 / 0.15); }
+:root[data-theme="dark"] .segmented { background: var(--chip); }
+:root[data-theme="dark"] .segmented label.on { background: var(--chip-on); box-shadow: 0 1px 3px rgb(0 0 0 / 0.4); }
+:root[data-theme="dark"] .stepper button:disabled { color: #3b4a66; }
+:root[data-theme="dark"] .pile-range { background: linear-gradient(to right, var(--accent) var(--fill), var(--track) var(--fill)); }
+:root[data-theme="dark"] .mode:hover { border-color: #3b4a66; }
+:root[data-theme="dark"] .switch { background: var(--track); }
+:root[data-theme="dark"] .switch:checked { background: var(--accent); }
+:root[data-theme="dark"] .draw-card { background: var(--card); border-color: #3b4a66; }
+:root[data-theme="dark"] .draw-card::after { background: repeating-linear-gradient(45deg, #475569 0 5px, #334155 5px 10px); }
+:root[data-theme="dark"] .net-bar, :root[data-theme="dark"] .turn-timer, :root[data-theme="dark"] .seat-peek,
+:root[data-theme="dark"] .pile-count-badge { background: #e5e9f0; color: #0b1120; }
+:root[data-theme="dark"] .seat-peek b { color: #0b1120; }
+:root[data-theme="dark"] .turn-timer.low { background: #dc2626; color: #fff; }
+/* Player-chosen colours can be very dark: lift them where they are text or strokes on dark. */
+:root[data-theme="dark"] .chat-msg b, :root[data-theme="dark"] .chat-flyout b { filter: brightness(1.6) saturate(0.9); }
+:root[data-theme="dark"] .seat-label { border-left-color: color-mix(in oklab, var(--who) 70%, white); }
+:root[data-theme="dark"] .seat-letter, :root[data-theme="dark"] .avatar { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px rgb(255 255 255 / 0.12); }
+:root[data-theme="dark"] .fan.small .hand-card { filter: brightness(1.25); }
+:root[data-theme="dark"] .countdown { text-shadow: 0 6px 24px rgb(0 0 0 / 0.6); }
+:root[data-theme="dark"] h1 { filter: brightness(1.5) saturate(1.1); }

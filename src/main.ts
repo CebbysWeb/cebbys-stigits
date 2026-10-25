@@ -74,6 +74,26 @@ setSoundOn(profile.sound !== false)
 const SOUND_ICON = '<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/><path class="cross" d="M16 9l6 6M22 9l-6 6"/></svg>'
 setLang(profile.lang ?? guessLang())
 
+// Light or dark: the player's choice, or the device's when they have not chosen.
+const darkDevice = matchMedia('(prefers-color-scheme: dark)')
+function applyTheme(): void {
+  const theme = profile.theme ?? (darkDevice.matches ? 'dark' : 'light')
+  document.documentElement.dataset.theme = theme
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0b1120' : '#f8fafc')
+}
+darkDevice.addEventListener('change', applyTheme)
+applyTheme()
+
+const SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
+const MOON = '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>'
+const AUTO = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>'
+/** Light, dark or follow the device: three small buttons beside the flags. */
+function themePickerHtml(): string {
+  const cur = profile.theme ?? 'auto'
+  return `<div class="theme-picker" role="radiogroup" aria-label="${t.theme}">${([['light', SUN, t.themeLight], ['dark', MOON, t.themeDark], ['auto', AUTO, t.themeAuto]] as const).map(([v, icon, label]) =>
+    `<button type="button" class="theme-opt ${cur === v ? 'on' : ''}" role="radio" aria-checked="${cur === v}" data-act="theme" data-theme="${v}" title="${label}" aria-label="${label}">${icon}</button>`).join('')}</div>`
+}
+
 function joinCodeFromUrl(): string | null {
   const m = location.hash.match(/join=([A-Za-z0-9]+)/)
   return m ? m[1].toUpperCase() : null
@@ -293,7 +313,7 @@ function renderHome(): string {
       <p class="tagline">${t.tagline}</p>
     </header>
     <section class="profile">
-      <div class="profile-head"><h2>${t.profile}</h2>${langPickerHtml()}</div>
+      <div class="profile-head"><h2>${t.profile}</h2><div class="prefs">${themePickerHtml()}${langPickerHtml()}</div></div>
       <label>${t.yourName} <input id="name" maxlength="20" value="${esc(profile.name)}" placeholder="${t.namePlaceholder}"/></label>
       ${colorPickerHtml(profile, t.yourColour)}
     </section>
@@ -530,6 +550,13 @@ app.addEventListener('click', async (e) => {
       chat.relabel()
       pile.update(snapshot?.game?.played.map((p) => p.card) ?? [])
       return render()
+    case 'theme': {
+      const v = el.dataset.theme
+      profile.theme = v === 'light' || v === 'dark' ? v : undefined
+      saveProfile(profile)
+      applyTheme()
+      return render()
+    }
     case 'sound':
       profile.sound = profile.sound === false
       saveProfile(profile)

@@ -14,7 +14,7 @@ test('offline practice against three bots, seated around the table', async ({ br
   await expect(page.locator('.players li')).toHaveCount(4)
   // A wrong guess costs a point and the card stays in hand.
   await page.click('.segmented label:has(input[value=point])')
-  await expect(page.locator('.seg-about')).toContainText('keep the card')
+  await expect(page.locator('.setting-wide .seg-about')).toContainText('keep the card')
   await page.click('[data-act=start]')
 
   // Me at the bottom; the next three players in turn order sit left, top and right.
@@ -42,7 +42,7 @@ test('offline practice against three bots, seated around the table', async ({ br
   await playCardByDrag(page, wrong.card)
   await expect(page.locator('.toast')).toContainText('Not a match')
   await expect(page.locator(`.seat.me .hand-card:not(.leaving)[data-card="${wrong.card}"].wrong`)).toHaveCount(1)
-  await expect.poll(async () => (await me()).score).toBe(start.score - 1)
+  await expect.poll(async () => (await me()).score).toBe(Math.max(0, start.score - 1)) // scores never go below 0
   expect((await me()).hand).toContain(wrong.card)
 
   // Play to the end. Whenever I hold the shape on the grid I play it by dragging it up.

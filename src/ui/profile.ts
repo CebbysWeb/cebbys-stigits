@@ -12,6 +12,8 @@ export interface Profile {
   lang?: Lang
   /** Sound effects; unset means on. */
   sound?: boolean
+  /** Colour theme; unset means follow the device. */
+  theme?: 'light' | 'dark'
 }
 
 const PROFILE_KEY = 'stigits-profile'
