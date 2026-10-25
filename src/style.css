@@ -644,3 +644,29 @@ body.in-game input, body.in-game textarea { -webkit-user-select: text; user-sele
 .join-card .row button { flex: 0 0 auto; }
 /* clip, not hidden: hidden on html and body turns body into a scroll box and breaks phone scrolling. */
 body { overflow-x: clip; }
+
+/* Crowded phone table: other players shrink to a coloured letter, with their cards shown
+   only next to the turn. */
+.side-top .seat.seat-mini { flex: 0 0 auto; max-width: 72px; min-width: 28px; }
+.side-top .seat.seat-mini:has(.seat-fan) { flex: 1 1 0; }
+.seat-letter {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--who); color: #fff; font-weight: 700; font-size: 0.8rem;
+  box-shadow: 0 0 0 2px var(--bg), 0 2px 6px rgb(15 23 42 / 0.2); text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+.seat-letter.off { opacity: 0.4; }
+.seat-mini.out .seat-letter { filter: grayscale(1); opacity: 0.5; }
+.seat-mini .seat-fan { width: 100%; }
+/* The player on turn at a crowded table: name and card count on one line, above their cards. */
+.side-top .seat.seat-focus { flex: 0 0 auto; max-width: 150px; }
+.side-top .seat-focus .seat-label { flex-wrap: nowrap; white-space: nowrap; }
+.side-top .seat-focus .seat-label b { max-width: 84px; }
+.side-top .seat-focus .seat-label .pts { display: none; }
+.side-top .seat-focus .seat-fan { width: 110px; }
+/* Keep a crowded table on one row: letters shrink before anything wraps. */
+.side-top:has(.seat-mini) { flex-wrap: nowrap; gap: 3px; justify-content: space-between; }
+.side-top .seat.seat-mini { flex: 0 1 28px; min-width: 16px; }
+.side-top .seat.seat-mini:has(.seat-fan) { flex: 0 1 56px; }
+.seat-mini .seat-letter { width: 100%; max-width: 26px; height: auto; aspect-ratio: 1; }
+.side-top .seat.seat-focus { max-width: 130px; flex-shrink: 0; }
+.side-top .seat-focus .seat-fan { width: 100px; }

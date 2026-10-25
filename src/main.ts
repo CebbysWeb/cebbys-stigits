@@ -408,6 +408,12 @@ function renderGame(s: Snapshot, g: GameState): string {
     : myTurn ? (g.movesLeft < 1 ? (selected !== null ? t.dropOnSpot : g.adjust ? t.adjustHint : t.playToMove) : selected !== null ? t.dropOnSpot : g.turnMoved ? t.matchMoveAgain : t.yourTurn)
     : t.isMoving(esc(g.players[g.current].name))
 
+  // A crowded table on a portrait phone: only the player on turn shows their name, the rest a
+  // letter; only the players before, on and after the turn show their cards.
+  const n = g.players.length
+  const crowded = narrow.matches && n - 1 > 3
+  const near = (i: number) => i === g.current || i === (g.current + 1) % n || i === (g.current - 1 + n) % n
+
   // Seats follow turn order clockwise from me: the next player sits on my left.
   const seat = (i: number) => {
     const p = g.players[i]
@@ -415,7 +421,13 @@ function renderGame(s: Snapshot, g: GameState): string {
     const pos = i === me ? 'bottom' : seatSides(g.players.length - 1)[(i - me + g.players.length) % g.players.length - 1]
     // Empty Deck: with the pile gone, a player without cards has finished.
     const out = g.settings.mode === 'emptyDeck' && g.pileLeft === 0 && p.hand.length === 0
-    return `<div class="seat seat-${pos} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''} ${out ? 'out' : ''}">
+    if (crowded && i !== me && i !== g.current) {
+      return `<div class="seat seat-${pos} seat-mini ${out ? 'out' : ''}" title="${esc(p.name)} · ${t.points(p.score)} · ${t.cardsInHand(p.hand.length)}">
+        <span class="seat-letter ${online ? '' : 'off'}" style="--who: ${esc(p.color ?? 'var(--accent)')}">${esc([...p.name][0]?.toUpperCase() ?? '?')}</span>
+        ${near(i) ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}
+      </div>`
+    }
+    return `<div class="seat seat-${pos} ${crowded && i !== me ? 'seat-focus' : ''} ${i === g.current ? 'active' : ''} ${i === me ? 'me' : ''} ${out ? 'out' : ''}">
       <div class="seat-label" style="--who: ${esc(p.color ?? 'var(--accent)')}">
         ${i === g.current && turnEndsAt && g.phase === 'playing' ? `<span class="turn-timer" title="${t.timeLeft}">${TIMER_ICON}<b>${clock()}</b><i></i></span>` : ''}
         <b>${esc(p.name)}${i === me ? ` (${t.you})` : ''}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
