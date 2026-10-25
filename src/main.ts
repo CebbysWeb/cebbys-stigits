@@ -43,6 +43,15 @@ function playCard(card: number): void {
 const seatHands = new Map<string, HandView>()
 // Where opponents sit, by player count, in turn order after me.
 /** Opponents split across the left, top and right edges, in clockwise order. */
+// Touch screens get tap controls (and their own tips) instead of keyboard shortcuts.
+const touch = matchMedia('(pointer: coarse)')
+
+/** What a wrong card costs at this table, in words for the help panel. */
+function wrongRuleText(set: Settings): string {
+  if (set.mode === 'rounds') return set.penalty ? `−${t.points(set.penalty)}.` : t.missKeepAbout
+  return { keep: t.missKeepAbout, toPile: t.missToPileAbout, discard: t.missDiscardAbout, point: t.missPointAbout }[set.miss]
+}
+
 // Portrait phones are too narrow for side seats: every opponent sits along the top.
 const narrow = matchMedia('(max-width: 560px) and (orientation: portrait)')
 narrow.addEventListener('change', () => snapshot?.game && render())
@@ -383,8 +392,8 @@ function renderLobby(s: Snapshot): string {
       </label>`).join('')}</div>
     ${rounds ? row(t.rounds, t.roundsAbout, select('rounds', [1, 2, 3, 5, 7, 10].map((r) => [r, String(r)])))
       : `<div class="setting setting-wide"><span><b>${t.drawPile}</b><small>${t.drawPileAbout}</small></span>${pile}</div>`}
-    ${row(t.turnCards, t.turnCardsAbout, toggle('rotate'))}
-    ${row(t.flipCards, t.flipCardsAbout, toggle('mirror'))}
+    ${row(t.turnCards, touch.matches ? t.turnCardsAboutTouch : t.turnCardsAbout, toggle('rotate'))}
+    ${row(t.flipCards, touch.matches ? t.flipCardsAboutTouch : t.flipCardsAbout, toggle('mirror'))}
     ${rounds ? row(t.wrongGuess, t.wrongGuessPoints, select('penalty', [[0, t.nothing], [1, t.points(1)], [2, t.points(2)]]))
       : missPicker}
     ${row(t.moveHints, t.moveHintsAbout, toggle('hints'))}
@@ -499,9 +508,11 @@ function renderGame(s: Snapshot, g: GameState): string {
       <h2>${t.controls}</h2>
       <ul>
         <li>${t.helpMove}</li>
-        <li>${t.helpPlay(g.settings.penalty ? `−${g.settings.penalty}` : t.noPenalty)}</li>
-        <li>${g.settings.rotate ? t.helpTurn : t.helpTurnOff}</li>
-        <li>${g.settings.mirror ? t.helpMirror : t.helpMirrorOff}</li>
+        <li>${t.helpPlay}</li>
+        <li>${t.helpWrong(wrongRuleText(g.settings))}</li>
+        ${g.settings.solo ? `<li>${t.helpSolo}</li>` : ''}
+        <li>${g.settings.rotate ? (touch.matches ? t.helpTurnTouch : t.helpTurn) : t.helpTurnOff}</li>
+        <li>${g.settings.mirror ? (touch.matches ? t.helpMirrorTouch : t.helpMirror) : t.helpMirrorOff}</li>
         <li>${t.helpPan}</li>
         <li>${t.helpReorder}</li>
       </ul>

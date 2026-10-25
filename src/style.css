@@ -759,3 +759,13 @@ body { overflow-x: clip; }
 :root[data-theme="dark"] .fan.small .hand-card { filter: brightness(1.25); }
 :root[data-theme="dark"] .countdown { text-shadow: 0 6px 24px rgb(0 0 0 / 0.6); }
 :root[data-theme="dark"] h1 { filter: brightness(1.5) saturate(1.1); }
+/* A tapped card lifts, with round turn and mirror buttons floating above it. */
+.hand-card.picked { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 12px 28px rgb(0 0 0 / 0.25); }
+.card-tools { position: absolute; z-index: 120; display: flex; gap: 10px; transform: translateX(-50%); pointer-events: auto; animation: tools-in 0.18s ease-out; }
+.card-tools[hidden] { display: none; }
+.card-tools button { width: 46px; height: 46px; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent); color: #fff; border: none; box-shadow: 0 6px 16px rgb(0 0 0 / 0.3); touch-action: manipulation; }
+.card-tools button[hidden] { display: none; }
+.card-tools button:active { transform: scale(0.92); }
+.card-tools svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes tools-in { from { opacity: 0; translate: 0 8px; } }
