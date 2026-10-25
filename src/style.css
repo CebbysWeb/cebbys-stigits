@@ -635,3 +635,6 @@ body.in-game input, body.in-game textarea { -webkit-user-select: text; user-sele
 @media (max-height: 500px) and (orientation: landscape) {
   .seat-bottom .turn-timer { left: calc(100% + 10px); bottom: auto; top: 50%; transform: translateY(-50%); animation: none; padding: 3px 10px 5px; font-size: 1rem; }
 }
+/* Hidden, the connection bar's shadow must not peek over the top edge. */
+.net-bar:not(.show) { box-shadow: none; visibility: hidden; transition: transform 0.25s, visibility 0s 0.25s; }
+.net-bar.show { padding-top: max(8px, env(safe-area-inset-top)); }
