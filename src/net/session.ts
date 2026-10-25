@@ -18,7 +18,7 @@ const BOT_OWN_SHAPE_MS = [400, 900]
 // Out of moves, a bot waits a moment (others may still call the shape) and ends its turn.
 const BOT_END_TURN_MS = [1200, 2000]
 const between = ([min, max]: number[]) => min + Math.random() * (max - min)
-const BOT_PACE = { relaxed: 1.6, normal: 1, quick: 0.55 }
+const BOT_PACE = { relaxed: 2.6, normal: 1.7, quick: 1 }
 export const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX)
 
 export interface LobbyPlayer {

@@ -63,6 +63,8 @@ input, select { padding: 10px 14px; border-radius: 12px; border: 1px solid var(-
 .share { display: flex; align-items: center; gap: 8px; flex: 1 1 360px; max-width: 560px; }
 .share input { flex: 1; min-width: 0; font-size: 0.85rem; color: var(--muted); }
 .share .code { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+/* Phones: the room code drops to its own line instead of pushing the page wide. */
+@media (max-width: 560px) { .share { flex-wrap: wrap; flex-basis: 100%; min-width: 0; } .share .code { flex-basis: 100%; } }
 .share .code b { color: var(--ink); letter-spacing: 0.15em; }
 .lobby-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 16px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; min-height: 0; }
