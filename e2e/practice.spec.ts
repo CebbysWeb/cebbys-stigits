@@ -16,6 +16,7 @@ test('offline practice against three bots, seated around the table', async ({ br
   await page.click('.segmented label:has(input[value=point])')
   await expect(page.locator('.setting-wide .seg-about')).toContainText('keep the card')
   await page.click('[data-act=start]')
+  await page.evaluate(() => window.__stigits!.botTimeScale(0.15)) // whole game, quick bots
 
   // Me at the bottom; the next three players in turn order sit left, top and right.
   const names = await page.evaluate(() => window.__stigits!.snapshot()!.game!.players.map((p) => p.name))
@@ -158,6 +159,7 @@ test('played cards fly from the hand that played them onto the pile', async ({ b
   await page.goto(BASE)
   await page.click('[data-act=practice]')
   await page.click('[data-act=start]')
+  await page.evaluate(() => window.__stigits!.botTimeScale(0.3))
   await page.waitForTimeout(700)
 
   const state = () => page.evaluate(() => {

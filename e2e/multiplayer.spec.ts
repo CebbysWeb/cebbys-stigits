@@ -122,6 +122,7 @@ test('four players join and finish a game', async ({ browser }) => {
     await expect(host.locator('.players li')).toHaveCount(i + 2)
   }
   await host.click('[data-act=start]')
+  await host.evaluate(() => window.__stigits!.botTimeScale(0.15))
   for (const g of guests) await expect(g.locator('.board')).toBeVisible()
 
   const phase = () => host.evaluate(() => window.__stigits!.snapshot()?.game?.phase)

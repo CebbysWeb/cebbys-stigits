@@ -19,6 +19,9 @@ const BOT_OWN_SHAPE_MS = [400, 900]
 const BOT_END_TURN_MS = [1200, 2000]
 const between = ([min, max]: number[]) => min + Math.random() * (max - min)
 const BOT_PACE = { relaxed: 2.6, normal: 1.7, quick: 1 }
+/** Scales every bot delay; only the end-to-end tests change it, to play whole games quickly. */
+let botTimeScale = 1
+export function setBotTimeScale(f: number): void { botTimeScale = f }
 export const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX)
 
 export interface LobbyPlayer {
@@ -269,7 +272,7 @@ export class HostSession implements Session {
       } else {
         this.handle({ type: 'endTurn', playerId: bot.id })
       }
-    }, between(delay) * BOT_PACE[g.settings.botSpeed])
+    }, between(delay) * BOT_PACE[g.settings.botSpeed] * botTimeScale)
   }
 
   // Any bot holding the shape on the grid calls it after a pause, if still valid then.
@@ -283,7 +286,7 @@ export class HostSession implements Session {
       if (h < 0) continue
       const card = bot.hand[h]
       const seen = g.moveCount
-      const delay = between(bot.id === mover ? BOT_OWN_SHAPE_MS : BOT_SPOT_MS) * BOT_PACE[g.settings.botSpeed]
+      const delay = between(bot.id === mover ? BOT_OWN_SHAPE_MS : BOT_SPOT_MS) * BOT_PACE[g.settings.botSpeed] * botTimeScale
       this.botClaims.set(bot.id, window.setTimeout(() => {
         this.botClaims.delete(bot.id)
         const now = this.snapshot.game

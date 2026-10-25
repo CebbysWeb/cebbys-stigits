@@ -4,7 +4,7 @@ import { allMoves, findMatchingMove, matchingCard, PILE_MAX, PILE_MIN, PILE_STEP
 import { guessLang, langPickerHtml, setLang, t, translateError, type Lang } from './i18n'
 import { playChat, playMove, playMyTurn, playTick, buzz, setSoundOn } from './ui/sfx'
 import { ChatView } from './ui/chat'
-import { ClientSession, forgetSavedGames, HostSession, savedGuestGame, savedHostGame, type NetState, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
+import { ClientSession, forgetSavedGames, HostSession, savedGuestGame, savedHostGame, type NetState, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE, setBotTimeScale } from './net/session'
 import { boardSvg, cardSvg, midpoint, stickSvg } from './ui/svg'
 import { HandView } from './ui/hand'
 import { PlayedPile } from './ui/pile'
@@ -1003,11 +1003,13 @@ declare global {
       autoMove: () => boolean
       autoClaim: () => boolean
       matches: (card: number) => boolean
+      botTimeScale: (f: number) => void
     }
   }
 }
 window.__stigits = {
   snapshot: () => snapshot,
+  botTimeScale: setBotTimeScale,
   myId: () => session?.myId ?? null,
   matches: (card: number) => {
     const g = snapshot?.game
