@@ -846,17 +846,22 @@ body { overflow-x: clip; }
   }
 }
 
-/* Wider screens: an opponent's cards rest in one pile on a small panel; hovering the seat opens
-   the panel and spreads the pile into their hand. */
-.seat-pile { display: none; }
+/* Wider screens: an opponent's own cards gather into one loose pile on a small panel; hovering
+   the seat slides the panel open and the cards out into their hand. The fan keeps its full
+   width (negative margins only shrink the room it takes), so its layout holds when it opens. */
 @media (min-width: 561px), (orientation: landscape) {
-  .seat:not(.me) .seat-label, .seat:not(.me) .seat-pile, .seat:not(.me) .seat-fan { pointer-events: auto; }
-  .seat:not(.me) .seat-pile { display: block; width: 52px; margin: 8px auto 4px; }
-  /* Hidden but still laid out, so the hand keeps its real width for when it opens. */
-  .seat:not(.me):not(:hover) .seat-fan { visibility: hidden; position: absolute; height: 0 !important; overflow: hidden; }
-  .seat:not(.me):hover .seat-pile { display: none; }
-  .side-top .seat-top:not(:hover) { width: auto; min-width: 110px; padding: 6px 14px 10px; }
-  .seat-left:not(:hover), .seat-right:not(:hover) { --fan-len: 64px !important; }
-  .seat-left .seat-pile, .seat-right .seat-pile { position: absolute; top: 50%; left: 50%; margin: 0; transform: translate(-50%, -40%); }
-  .seat-top, .seat-left::before, .seat-right::before, .seat-left .seat-label, .seat-right .seat-label { transition: top 0.2s, bottom 0.2s, width 0.2s; }
+  .seat:not(.me) .seat-label, .seat:not(.me) .seat-fan { pointer-events: auto; }
+  .seat:not(.me) .fan.small .hand-card { transition: transform 0.35s cubic-bezier(.2, .8, .3, 1.05), left 0.35s cubic-bezier(.2, .8, .3, 1.05), opacity 0.28s; }
+  .seat:not(.me):not(:hover) .fan.small .hand-card { left: 50%; transform: translate(-50%, 6px) rotate(var(--pr, 0deg)) !important; }
+  .fan.small .hand-card:nth-child(4n+1) { --pr: -6deg; }
+  .fan.small .hand-card:nth-child(4n+2) { --pr: 4deg; }
+  .fan.small .hand-card:nth-child(4n+3) { --pr: -2deg; }
+  .fan.small .hand-card:nth-child(4n) { --pr: 7deg; }
+  .side-top .seat-top { transition: width 0.35s cubic-bezier(.2, .8, .3, 1.05); }
+  .side-top .seat-top:not(:hover) { width: 120px; }
+  .seat-top .seat-fan { transition: margin 0.35s cubic-bezier(.2, .8, .3, 1.05); }
+  .seat-top:not(:hover) .seat-fan { margin-inline: calc((80px - var(--fan-len, 220px)) / 2); }
+  .seat-left:not(:hover), .seat-right:not(:hover) { --fan-len: 70px !important; }
+  .seat-left::before, .seat-right::before, .seat-left .seat-label, .seat-right .seat-label {
+    transition: top 0.35s cubic-bezier(.2, .8, .3, 1.05), bottom 0.35s cubic-bezier(.2, .8, .3, 1.05); }
 }
