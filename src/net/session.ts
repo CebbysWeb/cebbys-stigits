@@ -51,8 +51,8 @@ export interface Snapshot {
   sentAt?: number
 }
 
-type ToHost = { t: 'hello'; pid: string; name: string; color?: string } | { t: 'action'; action: Action } | { t: 'chat'; text: string }
-type ToClient = { t: 'snapshot'; snapshot: Snapshot } | { t: 'error'; message: string }
+type ToHost = { t: 'hello'; pid: string; name: string; color?: string } | { t: 'action'; action: Action } | { t: 'chat'; text: string } | { t: 'pong' }
+type ToClient = { t: 'snapshot'; snapshot: Snapshot } | { t: 'error'; message: string } | { t: 'ping' }
 
 /**
  * STUN finds a direct path for most players. A TURN relay covers networks that
@@ -124,6 +124,26 @@ const RESUME_MS = 2 * 60 * 60 * 1000
 const OFFLINE_SKIP_MS = 15_000
 /** A dropped guest retries every RETRY_MS, giving up after RETRY_LIMIT tries. */
 const RETRY_MS = 2000
+/**
+ * Heartbeat: the host pings every guest, and each side drops a link it has not heard
+ * from for a while. Phones often lose a connection without either end being told.
+ */
+const PING_MS = 4000
+const SILENT_MS = 15_000
+
+/**
+ * Calls `tick(frozen)` every `ms`. `frozen` is true when the page was suspended
+ * (a backgrounded phone tab), so silence during that time is not held against a link.
+ */
+function heartbeat(ms: number, tick: (frozen: boolean) => void): () => void {
+  let last = Date.now()
+  const id = window.setInterval(() => {
+    const now = Date.now()
+    tick(now - last > ms * 2.5)
+    last = now
+  }, ms)
+  return () => clearInterval(id)
+}
 const RETRY_LIMIT = 30
 
 function readSaved<T extends { at: number }>(key: string): T | null {
@@ -169,6 +189,13 @@ export class HostSession implements Session {
   private limitTimer = 0
   private limitTurn = ''
   private closed = false
+  private heard = new Map<DataConnection, number>()
+  private stopBeat: () => void = () => {}
+  private readonly onVisible = () => {
+    if (document.visibilityState !== 'visible' || this.closed) return
+    if (this.peer?.disconnected) this.peer.reconnect()
+    this.publish()
+  }
 
   private constructor(peer: Peer | null, code: string, name: string, color: string, events: SessionEvents) {
     this.peer = peer
@@ -180,7 +207,18 @@ export class HostSession implements Session {
       game: null,
     }
     peer?.on('connection', (conn) => this.accept(conn))
-    peer?.on('disconnected', () => peer.reconnect())
+    peer?.on('disconnected', () => !this.closed && peer.reconnect())
+    if (peer) {
+      document.addEventListener('visibilitychange', this.onVisible)
+      this.stopBeat = heartbeat(PING_MS, (frozen) => {
+        const now = Date.now()
+        for (const conn of this.conns.values()) {
+          if (frozen) this.heard.set(conn, now)
+          else if (now - (this.heard.get(conn) ?? now) > SILENT_MS) conn.close()
+          else if (conn.open) conn.send({ t: 'ping' } satisfies ToClient)
+        }
+      })
+    }
   }
 
   /** An offline game against bots: no network needed. */
@@ -293,8 +331,10 @@ export class HostSession implements Session {
 
   private accept(conn: DataConnection): void {
     let pid: string | null = null
+    this.heard.set(conn, Date.now())
     conn.on('data', (raw) => {
       const msg = raw as ToHost
+      this.heard.set(conn, Date.now())
       if (msg.t === 'hello') {
         pid = this.join(conn, msg)
       } else if (msg.t === 'chat' && pid) {
@@ -304,6 +344,7 @@ export class HostSession implements Session {
       }
     })
     conn.on('close', () => {
+      this.heard.delete(conn)
       if (!pid || this.conns.get(pid) !== conn) return
       this.conns.delete(pid)
       const p = this.snapshot.players.find((x) => x.id === pid)
@@ -453,6 +494,8 @@ export class HostSession implements Session {
     clearTimeout(this.offlineTimer)
     clearTimeout(this.botTimer)
     for (const t of this.botClaims.values()) clearTimeout(t)
+    this.stopBeat()
+    document.removeEventListener('visibilitychange', this.onVisible)
     this.peer?.destroy()
   }
 }
@@ -466,6 +509,15 @@ export class ClientSession implements Session {
   private retryTimer = 0
   private closed = false
   private readonly onOnline = () => this.state !== 'online' && this.retry()
+  private heard = 0
+  private stopBeat: () => void
+  // Back from the background: rejoin at once rather than waiting out a retry timer.
+  private readonly onVisible = () => {
+    if (document.visibilityState !== 'visible' || this.closed) return
+    if (this.peer.disconnected && !this.peer.destroyed) this.peer.reconnect()
+    if (!this.conn) this.retry()
+    else if (Date.now() - this.heard > PING_MS * 2) this.drop()
+  }
   state: NetState = 'online'
 
   private code: string
@@ -482,6 +534,20 @@ export class ClientSession implements Session {
     this.events = events
     peer.on('disconnected', () => !this.closed && peer.reconnect())
     window.addEventListener('online', this.onOnline)
+    document.addEventListener('visibilitychange', this.onVisible)
+    this.stopBeat = heartbeat(PING_MS, (frozen) => {
+      if (frozen) this.heard = Date.now()
+      else if (this.conn && Date.now() - this.heard > SILENT_MS) this.drop()
+    })
+  }
+
+  /** Give up on a link that has gone quiet, and start reconnecting. */
+  private drop(): void {
+    const conn = this.conn
+    this.conn = null
+    conn?.close()
+    if (this.state === 'online') this.dropped()
+    else this.retry()
   }
 
   static async join(code: string, name: string, color: string, events: SessionEvents, pid?: string): Promise<ClientSession> {
@@ -518,9 +584,12 @@ export class ClientSession implements Session {
         clearTimeout(timer)
         this.peer.off('error', onError)
         this.conn = conn
+        this.heard = Date.now()
         conn.on('data', (raw) => {
           const msg = raw as ToClient
-          if (msg.t === 'snapshot') this.events.onSnapshot(msg.snapshot)
+          this.heard = Date.now()
+          if (msg.t === 'ping') conn.send({ t: 'pong' } satisfies ToHost)
+          else if (msg.t === 'snapshot') this.events.onSnapshot(msg.snapshot)
           else this.events.onError(msg.message)
         })
         conn.on('close', () => this.conn === conn && this.dropped())
@@ -587,7 +656,9 @@ export class ClientSession implements Session {
   destroy(): void {
     this.closed = true
     clearTimeout(this.retryTimer)
+    this.stopBeat()
     window.removeEventListener('online', this.onOnline)
+    document.removeEventListener('visibilitychange', this.onVisible)
     this.peer.destroy()
   }
 }

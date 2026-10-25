@@ -74,3 +74,8 @@ export function playMyTurn(): void {
     tone(ac, freq * 2, now + at, 0.35, 0.04)
   }
 }
+
+/** A short vibration on phones that support it (Android; iOS ignores it). Follows the sound switch. */
+export function buzz(pattern: number | number[]): void {
+  if (enabled && 'vibrate' in navigator) navigator.vibrate(pattern)
+}

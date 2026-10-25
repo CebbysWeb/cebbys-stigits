@@ -578,3 +578,60 @@ button.big { min-height: 56px; font-size: 1.1rem; }
   25% { opacity: 0.9; transform: translate(-50%, -50%) scale(1.05); }
   to { opacity: 0; transform: translate(-50%, -50%) scale(1.25); }
 }
+
+/* Phones: no pull-to-refresh or rubber-banding, no double-tap zoom or tap flash,
+   and no long-press text selection or callouts while playing. */
+html, body { overscroll-behavior: none; }
+button, a { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+body.in-game { -webkit-tap-highlight-color: transparent; overflow: hidden; height: 100dvh; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body.in-game input, body.in-game textarea { -webkit-user-select: text; user-select: text; }
+/* iOS zooms into any text box under 16px. */
+@media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em); } }
+
+/* Notches and home bars: keep the corner buttons and the hand clear of them. */
+.help-btn:not(.chat-btn) { top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); }
+.help-btn.sound-btn { left: calc(max(12px, env(safe-area-inset-left)) + 48px); }
+.help-btn.quit-btn { left: auto; right: max(12px, env(safe-area-inset-right)); }
+.chat .chat-btn { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+.lobby-open .chat .chat-btn { bottom: calc(84px + env(safe-area-inset-bottom)); }
+.table-layout { padding-bottom: calc(54px + env(safe-area-inset-bottom)); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+
+/* An opponent's card count, beside their points. */
+.cards-left { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: 0.75rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cards-left::before { content: ''; width: 8px; height: 11px; border: 1.5px solid currentColor; border-radius: 2px; }
+
+/* Portrait phones: all opponents share the top row, each a compact chip over a small fan,
+   so the board gets the whole middle of the screen. */
+@media (max-width: 560px) and (orientation: portrait) {
+  .table-layout { padding-top: calc(64px + env(safe-area-inset-top)); grid-template-areas: "top top top" "left center right" "bottom bottom bottom"; }
+  .side-top { gap: 6px; flex-wrap: wrap; }
+  .side-top .seat { flex: 1 1 0; max-width: 140px; gap: 2px; }
+  .side-top .seat-fan { max-width: 100%; }
+  .side-top .seat-label { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 4px; padding: 2px 6px; font-size: 0.72rem; max-width: 100%; }
+  .side-top .seat-label b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-top .seat-label .pts, .side-top .cards-left { margin: 0; font-size: 0.68rem; }
+  .side-top .turn-badge { display: none; }
+  .turn { top: calc(14px + env(safe-area-inset-top)); }
+}
+
+/* Short landscape phones: shrink the chrome so the board and hand both fit. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .table-layout { padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: calc(40px + env(safe-area-inset-bottom)); gap: 4px; }
+  .turn { top: calc(16px + env(safe-area-inset-top)); font-size: 0.85rem; max-width: calc(100vw - 200px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seat-top .seat-fan { max-width: 200px; }
+  .seat-bottom .end-turn { bottom: -30px; }
+}
+
+/* Side players' names grow inwards from the screen edge rather than off it. */
+.seat-left .seat-label { left: 0; }
+.seat-right .seat-label { right: 0; }
+@media (max-width: 560px) and (orientation: portrait) {
+  .side-top .seat-label { border-radius: 10px; line-height: 1.25; }
+}
+@media (max-width: 560px) and (orientation: portrait) {
+  .turn { font-size: 0.75rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
+/* Short landscape: the timer sits beside my name instead of over the board. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .seat-bottom .turn-timer { left: calc(100% + 10px); bottom: auto; top: 50%; transform: translateY(-50%); animation: none; padding: 3px 10px 5px; font-size: 1rem; }
+}

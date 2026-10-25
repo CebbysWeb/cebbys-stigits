@@ -2,7 +2,7 @@ import './style.css'
 import { legalTargets } from './engine/geometry'
 import { allMoves, findMatchingMove, matchingCard, PILE_MAX, PILE_MIN, PILE_STEP, winnerNames, type GameState, type Settings } from './engine/game'
 import { guessLang, langPickerHtml, setLang, t, translateError, type Lang } from './i18n'
-import { playChat, playMove, playMyTurn, playTick, setSoundOn } from './ui/sfx'
+import { playChat, playMove, playMyTurn, playTick, buzz, setSoundOn } from './ui/sfx'
 import { ChatView } from './ui/chat'
 import { ClientSession, forgetSavedGames, HostSession, savedGuestGame, savedHostGame, type NetState, isBot, type Session, type Snapshot, MAX_PLAYERS, LOCAL_CODE } from './net/session'
 import { boardSvg, midpoint, stickSvg } from './ui/svg'
@@ -43,7 +43,11 @@ function playCard(card: number): void {
 const seatHands = new Map<string, HandView>()
 // Where opponents sit, by player count, in turn order after me.
 /** Opponents split across the left, top and right edges, in clockwise order. */
+// Portrait phones are too narrow for side seats: every opponent sits along the top.
+const narrow = matchMedia('(max-width: 560px) and (orientation: portrait)')
+narrow.addEventListener('change', () => snapshot?.game && render())
 function seatSides(k: number): string[] {
+  if (narrow.matches) return Array(k).fill('top')
   if (k <= 3) return [[], ['top'], ['left', 'right'], ['left', 'top', 'right']][k]
   const side = Math.floor(k / 3)
   return [...Array(side).fill('left'), ...Array(k - 2 * side).fill('top'), ...Array(side).fill('right')]
@@ -97,7 +101,10 @@ const events = {
     if (prev && next && next.moveCount > prev.moveCount) playMove()
     const myTurnNow = (g: GameState | null | undefined) =>
       !!g && g.phase === 'playing' && g.players[g.current]?.id === session?.myId
-    if (myTurnNow(next) && (!myTurnNow(prev) || prev!.round !== next!.round)) playMyTurn()
+    if (myTurnNow(next) && (!myTurnNow(prev) || prev!.round !== next!.round)) {
+      playMyTurn()
+      buzz(30)
+    }
     snapshot = s
     chat.update(session instanceof HostSession && session.isLocal ? null : s.chat ?? [], session?.myId ?? '')
     // The deadline is on the host's clock; keep only the time left, measured on ours.
@@ -114,7 +121,10 @@ const events = {
       const cost = mode === 'rounds' ? (penalty ? ` −${penalty}` : '')
         : miss === 'point' ? ' −1' : miss === 'toPile' ? t.costToPile : t.costDiscard
       toast(c.ok ? `${mine ? t.match : t.matched(who.name)} +1` : `${mine ? t.notMatch : t.missed(who.name)}${cost}`)
-      if (mine && !c.ok) hand.flash(c.card, 'wrong')
+      if (mine && !c.ok) {
+        hand.flash(c.card, 'wrong')
+        buzz([40, 60, 40])
+      }
       // Two players may hold the same shape, so look only in the claimer's hand.
       const fanOf = mine ? hand.el : document.querySelector(`.seat-fan[data-seat="${CSS.escape(who.id)}"]`)
       const el = c.ok ? fanOf?.querySelector<HTMLElement>(`.hand-card:not(.leaving)[data-card="${c.card}"]`) ?? null : null
@@ -199,6 +209,8 @@ async function connect(mode: 'host' | 'join' | 'practice' | 'resume' | 'rejoin',
 
 function render(): void {
   document.body.classList.toggle('lobby-open', !!session && !!snapshot && !snapshot.game)
+  document.body.classList.toggle('in-game', !!snapshot?.game)
+  keepAwake(!!session && !!snapshot?.game)
   if (!session || !snapshot) {
     app.innerHTML = renderHome()
     const home = app.querySelector<HTMLElement>('.home')
@@ -405,6 +417,7 @@ function renderGame(s: Snapshot, g: GameState): string {
         ${i === g.current && turnEndsAt && g.phase === 'playing' ? `<span class="turn-timer" title="${t.timeLeft}">${TIMER_ICON}<b>${clock()}</b><i></i></span>` : ''}
         <b>${esc(p.name)}${i === me ? ` (${t.you})` : ''}</b>${online ? '' : `<span class="off">${t.offline}</span>`}
         <span class="pts">${t.points(p.score)}</span>
+        ${i === me ? '' : `<span class="cards-left" title="${t.cardsInHand(p.hand.length)}">${p.hand.length}</span>`}
         ${out ? `<span class="done-badge">${t.done}</span>` : ''}
         ${i === g.current ? `<span class="turn-badge">${t.turn(g.turn)}</span>` : ''}
       </div>
@@ -678,6 +691,7 @@ function tickTimer(): void {
   warned = mark
   if (isMyTurn()) {
     playTick(mark <= 5)
+    if (mark <= 5) buzz(15)
     flashCountdown(mark)
   }
 }
@@ -905,3 +919,22 @@ window.__stigits = {
 }
 
 render()
+
+// Keep the screen on during a game: a phone that dims and locks drops its connection.
+let wakeLock: WakeLockSentinel | null = null
+let wantAwake = false
+function keepAwake(on: boolean): void {
+  wantAwake = on
+  if (!on) {
+    void wakeLock?.release()
+    wakeLock = null
+  } else if (!wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+    navigator.wakeLock.request('screen').then((lock) => {
+      wakeLock = lock
+      lock.addEventListener('release', () => wakeLock === lock && (wakeLock = null))
+      if (!wantAwake) keepAwake(false)
+    }, () => {})
+  }
+}
+// The lock is dropped whenever the page is hidden; take it again on return.
+document.addEventListener('visibilitychange', () => keepAwake(wantAwake))

@@ -102,7 +102,9 @@ export class HandView {
     // Keep a margin so the outer cards' tilt does not swing them off screen.
     const margin = this.opts.interactive ? 18 : 4
     const width = (this.el.clientWidth || 320) - margin * 2
-    this.cardWidth = Math.max(this.opts.minCard, Math.min(this.opts.maxCard, width / 3.4))
+    // On a short (landscape phone) screen my cards must leave room for the board.
+    const tall = this.opts.interactive ? Math.max(56, innerHeight * 0.2) : Infinity
+    this.cardWidth = Math.min(tall, Math.max(this.opts.minCard, Math.min(this.opts.maxCard, width / 3.4)))
     const spacing = n > 1 ? Math.min(this.cardWidth * 0.82, (width - this.cardWidth) / (n - 1)) : 0
     const spread = Math.min(7, 36 / Math.max(n, 1))
     const left = margin + (width - (spacing * (n - 1) + this.cardWidth)) / 2
