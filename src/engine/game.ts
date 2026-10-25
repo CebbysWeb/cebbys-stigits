@@ -8,7 +8,8 @@ export const MAX_PLAYERS = 12
 export type GameMode = 'emptyDeck' | 'rounds'
 /** toPile: the card goes back into the draw pile. discard: the card is out of the game.
  *  point: lose a point and keep the card. */
-export type MissRule = 'toPile' | 'discard' | 'point'
+/** What a wrong card costs in Empty Deck: nothing (it stays in hand), back to the pile, discarded, or a point. */
+export type MissRule = 'keep' | 'toPile' | 'discard' | 'point'
 
 export interface Settings {
   /** Empty deck: everyone holds 5 and draws from a pile of N cards; most played cards wins once the pile is empty.
@@ -34,10 +35,12 @@ export interface Settings {
   showCards: boolean
   /** Empty Deck: cards still in hand when the game ends cost a point each. */
   handPenalty: boolean
+  /** Singleplayer practice: move as often as you like, but a turn with a move and no card costs a point. */
+  solo: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'toPile', hints: true, botSpeed: 'normal', turnLimit: 0, showCards: false, handPenalty: false,
+  mode: 'emptyDeck', rounds: 3, pile: 50, rotate: true, mirror: true, penalty: 1, miss: 'keep', hints: true, botSpeed: 'normal', turnLimit: 0, showCards: false, handPenalty: false, solo: false,
 }
 
 export const PILE_MIN = 10
@@ -53,7 +56,7 @@ export interface Player {
   hand: number[]
   /** Cards correctly played this round. */
   pile: number[]
-  /** Cumulative score: +1 per correct play, −1 per wrong one. */
+  /** Cumulative score: +1 per correct play, −1 per wrong one; never below 0. */
   score: number
 }
 
@@ -102,6 +105,8 @@ export interface GameState {
   lastClaim: { player: number; card: number; ok: boolean; seq: number } | null
   /** Cards correctly played since the last move, for UI highlighting. */
   lastPlayed: { player: number; card: number }[]
+  /** The player on turn has played a matching card this turn. */
+  turnPlayed?: boolean
   /** Every card correctly played this round, oldest first: the shared played pile. */
   played: { player: number; card: number }[]
   log: string[]
@@ -238,7 +243,8 @@ function move(state: GameState, action: Extract<Action, { type: 'move' }>): void
   }
   state.adjust = { index: action.index, from, movesLeft: state.movesLeft, turnMoved: state.turnMoved, lastMove: state.lastMove }
   state.lastMove = { from, to: state.pattern[action.index] }
-  state.movesLeft -= 1
+  // Singleplayer has no move limit.
+  if (!state.settings.solo) state.movesLeft -= 1
   state.turnMoved = true
 }
 
@@ -247,6 +253,11 @@ function move(state: GameState, action: Extract<Action, { type: 'move' }>): void
 function endTurn(state: GameState, action: Extract<Action, { type: 'endTurn' }>): void {
   const me = state.players[state.current]
   if (me.id !== action.playerId) throw new Error(`It is ${me.name}'s turn`)
+  if (state.settings.solo && state.turnMoved && !state.turnPlayed) {
+    losePoints(me, 1)
+    state.log.push(`${me.name} moved without playing a card (−1).`)
+  }
+  state.turnPlayed = false
   const n = state.players.length
   for (let k = 0; k < n; k++) {
     const p = state.players[(state.current + k) % n]
@@ -311,14 +322,14 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
     const cost = state.settings.penalty
     if (state.settings.mode === 'emptyDeck') {
       const rule = state.settings.miss
-      if (rule === 'point') p.score -= 1
-      else p.hand.splice(h, 1)
+      if (rule === 'point') losePoints(p, 1)
+      else if (rule !== 'keep') p.hand.splice(h, 1)
       // Back into the pile: someone will draw it again later.
       if (rule === 'toPile') state.pileLeft += 1
       state.log.push(`${p.name} played a card that does not match (${
-        rule === 'point' ? '−1' : rule === 'toPile' ? 'back to the pile' : 'discarded'}).`)
+        rule === 'keep' ? 'no penalty' : rule === 'point' ? '−1' : rule === 'toPile' ? 'back to the pile' : 'discarded'}).`)
     } else {
-      p.score -= cost
+      losePoints(p, cost)
       state.log.push(`${p.name} played a card that does not match${cost ? ` (−${cost})` : ''}.`)
     }
     afterClaim(state, i)
@@ -334,14 +345,22 @@ function claim(state: GameState, action: Extract<Action, { type: 'claim' }>): vo
   state.adjust = null
 
   // The player whose turn it is earns another move with each match.
-  if (i === state.current) state.movesLeft = 1
+  if (i === state.current) {
+    state.movesLeft = 1
+    state.turnPlayed = true
+  }
   afterClaim(state, i)
+}
+
+/** Scores never drop below zero. */
+function losePoints(p: Player, n: number): void {
+  p.score = Math.max(0, p.score - n)
 }
 
 function endRound(state: GameState): void {
   if (state.settings.mode === 'emptyDeck' && state.settings.handPenalty)
     for (const p of state.players) if (p.hand.length) {
-      p.score -= p.hand.length
+      losePoints(p, p.hand.length)
       state.log.push(`${p.name} loses ${p.hand.length} for cards left in hand.`)
     }
   state.phase = state.round >= state.roundsTotal ? 'gameOver' : 'roundOver'

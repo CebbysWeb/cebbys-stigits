@@ -670,3 +670,33 @@ body { overflow-x: clip; }
 .seat-mini .seat-letter { width: 100%; max-width: 26px; height: auto; aspect-ratio: 1; }
 .side-top .seat.seat-focus { max-width: 130px; flex-shrink: 0; }
 .side-top .seat-focus .seat-fan { width: 100px; }
+/* Fingers are wider than a mouse pointer: a fatter invisible grab line round each stick. */
+@media (pointer: coarse) { .hit { stroke-width: 0.8; } }
+/* Portrait phones: the played pile sits low, so its caption goes above it, clear of my name. */
+.pile.by-hand .pile-count, .draw-pile.by-hand .pile-count { bottom: auto; top: -20px; font-size: 0.7rem; }
+.segmented.practice-kind { grid-template-columns: 1fr 1fr; margin: 4px 0 2px; }
+
+/* Portrait phones: the opponents' row sits on its own frosted strip above the grid. */
+@media (max-width: 560px) and (orientation: portrait) {
+  .side-top { position: relative; z-index: 3; padding: 6px 6px 4px; border-radius: 16px; background: var(--glass);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: var(--shadow); }
+}
+/* Tap a letter to see who it is: the full name slides down out of the row. */
+.seat-mini { pointer-events: auto; cursor: pointer; }
+.seat-peek {
+  position: absolute; top: calc(100% + 10px); left: 50%; z-index: 6; white-space: nowrap;
+  padding: 6px 12px; border-radius: 12px; background: #0f172a; color: #fff; font-size: 0.8rem;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 0.3); pointer-events: none;
+  opacity: 0; transform: translate(-50%, -12px); transition: opacity 0.2s, transform 0.25s cubic-bezier(.2, .9, .3, 1.2);
+}
+.seat-peek b { color: #fff; margin-right: 4px; }
+.seat-mini.peek .seat-peek { opacity: 1; transform: translate(-50%, 0); }
+/* Keep the bubble on screen at the row's ends. */
+.side-top .seat-mini:first-child .seat-peek { left: 0; transform: translate(0, -12px); }
+.side-top .seat-mini:first-child.peek .seat-peek { transform: translate(0, 0); }
+.side-top .seat-mini:last-child .seat-peek { left: auto; right: 0; transform: translate(0, -12px); }
+.side-top .seat-mini:last-child.peek .seat-peek { transform: translate(0, 0); }
+/* Four wrong-card rules: one row on wide screens, two by two on phones. */
+.setting-wide .segmented:has(label:nth-child(4)) { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 480px) { .setting-wide .segmented:has(label:nth-child(4)) { grid-template-columns: 1fr 1fr; } }
+.setting-wide .segmented { width: 100%; }

@@ -106,9 +106,10 @@ describe('table settings', () => {
   it('uses the chosen wrong-call penalty', () => {
     for (const penalty of [0, 2]) {
       const s = newGame(two, { rounds: 1, seed: 2, penalty, mode: 'rounds' })
+      s.players[1].score = 5
       const wrong = s.players[1].hand.find((c) => SHAPE_CANON[c] !== canonical(s.pattern))!
       const next = applyAction(s, { type: 'claim', playerId: 'b', card: wrong, seen: s.moveCount })
-      expect(next.players[1].score).toBe(0 - penalty)
+      expect(next.players[1].score).toBe(5 - penalty)
     }
   })
 })
@@ -288,10 +289,11 @@ describe('turns', () => {
     const card = SHAPE_CANON.indexOf(canonical(s.pattern))
     s.players[0].hand = [card]
     s.players[1].hand = s.players[1].hand.slice(0, 3)
+    s.players[1].score = 4
     s = claim(s, s.players[0].id, card)
     expect(s.phase).toBe('gameOver')
     expect(s.players[0].score).toBe(1)
-    expect(s.players[1].score).toBe(-3)
+    expect(s.players[1].score).toBe(1)
   })
 })
 
@@ -315,8 +317,11 @@ describe('claiming cards', () => {
     const s = newGame(players, { rounds: 1, seed: 5, mode: 'rounds' })
     const canon = canonical(s.pattern)
     const wrong = s.players[0].hand.find((c) => SHAPE_CANON[c] !== canon)!
+    s.players[0].score = 3
     const next = claim(s, 'a', wrong)
-    expect(next.players[0].score).toBe(-1)
+    expect(next.players[0].score).toBe(2)
+    // Scores never go below zero.
+    expect(claim({ ...next, players: next.players.map((p, i) => (i ? p : { ...p, score: 0 })) }, 'a', wrong).players[0].score).toBe(0)
     expect(next.players[0].hand).toContain(wrong)
     expect(next.lastClaim).toMatchObject({ ok: false })
   })
@@ -352,8 +357,9 @@ describe('full games', () => {
   })
 
   it('empty deck: a wrong card goes back to the pile, is discarded, or costs a point', () => {
-    for (const [miss, inHand, pile, score] of [['toPile', false, 51, 0], ['discard', false, 50, 0], ['point', true, 50, -1]] as const) {
+    for (const [miss, inHand, pile, score] of [['keep', true, 50, 1], ['toPile', false, 51, 1], ['discard', false, 50, 1], ['point', true, 50, 0]] as const) {
       const s = newGame(players, { rounds: 1, seed: 5, miss, pile: 50 })
+      s.players[0].score = 1
       const wrong = s.players[0].hand.find((c) => SHAPE_CANON[c] !== canonical(s.pattern))!
       const next = claim(s, 'a', wrong)
       expect(next.players[0].hand.includes(wrong)).toBe(inHand)
@@ -430,5 +436,34 @@ describe('fixing a slipped drop', () => {
     }
     const ended = applyAction(moveTo(start()), { type: 'endTurn', playerId: 'a' })
     expect(ended.adjust).toBeNull()
+  })
+})
+
+describe('singleplayer', () => {
+  const solo = [{ id: 'a', name: 'Ann' }]
+  it('moves without limit, and a turn that moves without playing costs a point (not below 0)', () => {
+    let s = newGame(solo, { rounds: 1, seed: 5, solo: true })
+    s.players[0].score = 1
+    for (let k = 0; k < 3; k++) {
+      const m = allMoves(s).find((x) => x.index !== s.adjust?.index)!
+      s = applyAction(s, { type: 'move', playerId: 'a', index: m.index, to: m.to })
+    }
+    expect(s.moveCount).toBe(3)
+    s = applyAction(s, { type: 'endTurn', playerId: 'a' })
+    expect(s.players[0].score).toBe(0)
+    const m = allMoves(s)[0]
+    s = applyAction(s, { type: 'move', playerId: 'a', index: m.index, to: m.to })
+    s = applyAction(s, { type: 'endTurn', playerId: 'a' })
+    expect(s.players[0].score).toBe(0)
+  })
+  it('a turn that plays a card costs nothing', () => {
+    let s = newGame(solo, { rounds: 1, seed: 5, solo: true })
+    const m = allMoves(s)[0]
+    s = applyAction(s, { type: 'move', playerId: 'a', index: m.index, to: m.to })
+    const card = SHAPE_CANON.indexOf(canonical(s.pattern))
+    s.players[0].hand[0] = card
+    s = applyAction(s, { type: 'claim', playerId: 'a', card, seen: s.moveCount })
+    s = applyAction(s, { type: 'endTurn', playerId: 'a' })
+    expect(s.players[0].score).toBe(1)
   })
 })

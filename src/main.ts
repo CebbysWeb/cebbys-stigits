@@ -55,6 +55,9 @@ function seatSides(k: number): string[] {
 // The stick being dragged on the board, and the target it would snap to on release.
 let drag: { index: number; pointerId: number; targets: Stick[]; snap: number | null } | null = null
 let status = ''
+// The opponent whose full name is showing after a tap on their letter (crowded phone table).
+let peekId: string | null = null
+let peekTimer = 0
 // The screen wake lock held during a game (see keepAwake).
 let wakeLock: WakeLockSentinel | null = null
 let wantAwake = false
@@ -331,6 +334,7 @@ function renderLobby(s: Snapshot): string {
     ['rounds', t.modeRounds, t.modeRoundsAbout],
   ]
   const missRules: [Settings['miss'], string, string][] = [
+    ['keep', t.missKeep, t.missKeepAbout],
     ['toPile', t.missToPile, t.missToPileAbout],
     ['discard', t.missDiscard, t.missDiscardAbout],
     ['point', t.missPoint, t.missPointAbout],
@@ -367,7 +371,7 @@ function renderLobby(s: Snapshot): string {
     ${row(t.showCards, t.showCardsAbout, toggle('showCards'))}
     ${rounds ? '' : row(t.handPenalty, t.handPenaltyAbout, toggle('handPenalty'))}
     ${row(t.turnLimit, t.turnLimitAbout, select('turnLimit', [[0, t.noLimit], [30, t.seconds(30)], [60, t.minutes(1)], [120, t.minutes(2)], [180, t.minutes(3)], [300, t.minutes(5)]]))}
-    ${row(t.botSpeed, t.botSpeedAbout, select('botSpeed', [['relaxed', t.relaxed], ['normal', t.normal], ['quick', t.quick]]))}`
+    ${set.solo ? '' : row(t.botSpeed, t.botSpeedAbout, select('botSpeed', [['relaxed', t.relaxed], ['normal', t.normal], ['quick', t.quick]]))}`
 
   return `<main class="lobby">
     <header class="lobby-head">
@@ -384,8 +388,13 @@ function renderLobby(s: Snapshot): string {
       <section class="panel">
         <div class="panel-head">
           <h2>${t.players} <span class="count">${n}/${MAX_PLAYERS}</span></h2>
-          ${host ? `<button data-act="add-bot" ${full ? 'disabled' : ''}>${t.addBot}</button>` : ''}
+          ${host && !set.solo ? `<button data-act="add-bot" ${full ? 'disabled' : ''}>${t.addBot}</button>` : ''}
         </div>
+        ${local ? `<div class="segmented practice-kind" role="radiogroup" aria-label="${t.practice}">
+          <label class="${set.solo ? 'on' : ''}"><input type="radio" name="solo" value="1" data-setting="solo" ${set.solo ? 'checked' : ''}/>${t.solo}</label>
+          <label class="${set.solo ? '' : 'on'}"><input type="radio" name="solo" value="" data-setting="solo" ${set.solo ? '' : 'checked'}/>${t.withBots}</label>
+        </div>
+        <p class="seg-about">${set.solo ? t.soloAbout : t.withBotsAbout}</p>` : ''}
         <ul class="players">${players}</ul>
       </section>
       <section class="panel">
@@ -394,8 +403,8 @@ function renderLobby(s: Snapshot): string {
       </section>
     </div>
     <footer class="lobby-foot">
-      <p class="hint">${host ? (n < 2 ? t.waitingFriend : t.ready) : t.waitingHost}</p>
-      ${host ? `<button class="primary start" data-act="start" ${n < 2 ? 'disabled' : ''}>${t.start}</button>` : ''}
+      <p class="hint">${host ? (n < 2 && !set.solo ? t.waitingFriend : t.ready) : t.waitingHost}</p>
+      ${host ? `<button class="primary start" data-act="start" ${n < 2 && !set.solo ? 'disabled' : ''}>${t.start}</button>` : ''}
     </footer>
   </main>`
 }
@@ -422,7 +431,8 @@ function renderGame(s: Snapshot, g: GameState): string {
     // Empty Deck: with the pile gone, a player without cards has finished.
     const out = g.settings.mode === 'emptyDeck' && g.pileLeft === 0 && p.hand.length === 0
     if (crowded && i !== me && i !== g.current) {
-      return `<div class="seat seat-${pos} seat-mini ${out ? 'out' : ''}" title="${esc(p.name)} · ${t.points(p.score)} · ${t.cardsInHand(p.hand.length)}">
+      return `<div class="seat seat-${pos} seat-mini ${out ? 'out' : ''} ${peekId === p.id ? 'peek' : ''}" data-act="peek" data-id="${esc(p.id)}">
+        <span class="seat-peek" aria-hidden="${peekId !== p.id}"><b>${esc(p.name)}</b> ${t.points(p.score)} · ${t.cardsInHand(p.hand.length)}</span>
         <span class="seat-letter ${online ? '' : 'off'}" style="--who: ${esc(p.color ?? 'var(--accent)')}">${esc([...p.name][0]?.toUpperCase() ?? '?')}</span>
         ${near(i) ? `<div class="seat-fan" data-seat="${esc(p.id)}"></div>` : ''}
       </div>`
@@ -535,6 +545,7 @@ app.addEventListener('click', async (e) => {
     case 'quit':
       if (!confirm(session instanceof HostSession && session.snapshot.code !== LOCAL_CODE ? t.quitConfirmAll : t.quitConfirm)) return
       return leaveGame()
+    case 'peek': return peek(el.dataset.id!)
     case 'end-turn': return session!.send({ type: 'endTurn', playerId: session!.myId })
     case 'add-bot': return (session as HostSession).addBot()
     case 'remove': return (session as HostSession).removePlayer(el.dataset.id!)
@@ -591,10 +602,12 @@ function camTarget(g: GameState): { x: number; y: number; w: number } {
   const vh = window.innerHeight
   const area = app.querySelector('.play-area')?.getBoundingClientRect()
   const ax = area && area.width > 0 ? area : { left: 0, top: 0, width: vw, height: vh }
-  // Pixels per lattice unit that fit the group: piles beyond ±PILE_REACH, shape plus a square above and below.
-  const scale = Math.max(8, Math.min(vw / 9,
-    (ax.width - 16) / (2 * (PILE_REACH + PILE_SQUARES)),
-    (ax.height - 16) / Math.max(box.h + 2, PILE_SQUARES + 0.5)))
+  // Pixels per lattice unit that fit the group: piles beyond ±reach, shape plus a square around it.
+  // On portrait phones the piles sit beside my cards, so the shape alone fills the play area.
+  const byHand = narrow.matches
+  const scale = Math.max(8, byHand
+    ? Math.min(vw / 5, (ax.width - 16) / (box.w + 2), (ax.height - 16) / (box.h + 2))
+    : Math.min(vw / 9, (ax.width - 16) / (2 * (PILE_REACH + PILE_SQUARES)), (ax.height - 16) / Math.max(box.h + 2, PILE_SQUARES + 0.5)))
   // Shift the view so the shape centre lands on the play area's centre.
   const dx = ax.left + ax.width / 2 - vw / 2
   const dy = ax.top + ax.height / 2 - vh / 2
@@ -646,10 +659,6 @@ const PILE_REACH = 2.5 + 1
 /** Each pile is this many squares wide, so it scales with the grid. */
 const PILE_SQUARES = 2
 
-/**
- * Keeps the pickup pile left of the shape and the played pile right of it, both
- * centred on its height. They follow the camera, gliding when the shape changes.
- */
 /** The piles are pinned to the grid either side of the shape centre, so they move only with it (or the camera). */
 function placePiles(): void {
   const g = snapshot?.game
@@ -658,11 +667,26 @@ function placePiles(): void {
   const box = shapeBox(g)
   const c = new DOMPoint(box.x, box.y).matrixTransform(ctm)
   const unit = Math.hypot(ctm.a, ctm.b)
+  // Portrait phones: pickup pile left of my cards, played pile right of them, by my name.
+  const label = narrow.matches ? app.querySelector('.seat-bottom .seat-label')?.getBoundingClientRect() : null
+  if (label) {
+    const size = Math.max(48, Math.min(76, (window.innerWidth - label.width) / 2 - 14))
+    for (const el of [pile.el, drawPile]) {
+      el.style.width = el.style.height = `${size}px`
+      el.classList.add('compact', 'by-hand')
+    }
+    const top = `${label.bottom - size}px`
+    drawPile.style.left = '8px'
+    pile.el.style.left = `${window.innerWidth - 8 - size}px`
+    drawPile.style.top = pile.el.style.top = top
+    return
+  }
   const reach = PILE_REACH * unit
   const size = PILE_SQUARES * unit
   for (const el of [pile.el, drawPile]) {
     el.style.width = el.style.height = `${size}px`
     el.classList.toggle('compact', size < 110)
+    el.classList.remove('by-hand')
   }
   const top = `${c.y - size / 2}px`
   pile.el.style.left = `${c.x + reach}px`
@@ -878,6 +902,7 @@ app.addEventListener('change', (e) => {
   const key = el.dataset.setting as keyof Settings | undefined
   if (!key) return
   const value = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked
+    : key === 'solo' ? el.value === '1'
     : key === 'botSpeed' || key === 'mode' || key === 'miss' ? el.value : Number(el.value)
   session.configure({ [key]: value })
   saveSettings(session.snapshot.settings)
@@ -951,3 +976,15 @@ function keepAwake(on: boolean): void {
 }
 // The lock is dropped whenever the page is hidden; take it again on return.
 document.addEventListener('visibilitychange', () => keepAwake(wantAwake))
+
+/** Tap a player's letter: their name slides down below the row for a few seconds (tap again to hide). */
+function peek(id: string): void {
+  peekId = peekId === id ? null : id
+  clearTimeout(peekTimer)
+  if (peekId) peekTimer = window.setTimeout(() => peek(id), 3500)
+  app.querySelectorAll<HTMLElement>('.seat-mini').forEach((el) => {
+    const on = el.dataset.id === peekId
+    el.classList.toggle('peek', on)
+    el.querySelector('.seat-peek')?.setAttribute('aria-hidden', String(!on))
+  })
+}

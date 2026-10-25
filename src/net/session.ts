@@ -235,6 +235,7 @@ export class HostSession implements Session {
   addBot(): void {
     const s = this.snapshot
     if (s.game || s.players.length >= MAX_PLAYERS) return
+    s.settings.solo = false
     const used = new Set(s.players.map((p) => p.id))
     const n = BOT_NAMES.findIndex((_, i) => !used.has(BOT_PREFIX + i))
     s.players.push({ id: BOT_PREFIX + n, name: BOT_NAMES[n], color: `hsl(${Math.floor(Math.random() * 360)} 70% 48%)`, connected: true })
@@ -414,14 +415,19 @@ export class HostSession implements Session {
 
   configure(patch: Partial<Settings>): void {
     if (this.snapshot.game) return
-    this.snapshot.settings = { ...this.snapshot.settings, ...patch }
+    const s = this.snapshot
+    // Practice is either singleplayer (just me) or against bots.
+    if (patch.solo !== undefined && !this.isLocal) patch = { ...patch, solo: false }
+    s.settings = { ...s.settings, ...patch }
+    if (patch.solo) s.players = s.players.filter((p) => !isBot(p.id))
+    else if (patch.solo === false && this.isLocal && !s.players.some((p) => isBot(p.id))) return this.addBot()
     this.publish()
   }
 
   start(): void {
     const s = this.snapshot
     s.players = s.players.filter((p) => p.connected)
-    s.game = newGame(s.players, { ...s.settings })
+    s.game = newGame(s.players, { ...s.settings, solo: this.isLocal && s.settings.solo })
     this.publish()
   }
 
