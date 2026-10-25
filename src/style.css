@@ -758,9 +758,11 @@ body { overflow-x: clip; }
 :root[data-theme="dark"] .switch:checked { background: var(--accent); }
 :root[data-theme="dark"] .draw-card { background: var(--card); border-color: #3b4a66; }
 :root[data-theme="dark"] .draw-card::after { background: repeating-linear-gradient(45deg, #475569 0 5px, #334155 5px 10px); }
-:root[data-theme="dark"] .net-bar, :root[data-theme="dark"] .turn-timer, :root[data-theme="dark"] .seat-peek,
+:root[data-theme="dark"] .net-bar, :root[data-theme="dark"] .turn-timer,
 :root[data-theme="dark"] .pile-count-badge { background: #e5e9f0; color: #0b1120; }
-:root[data-theme="dark"] .seat-peek b { color: #0b1120; }
+/* The opponent popup is a panel like the others: dark in the dark theme. */
+:root[data-theme="dark"] .seat-peek { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line), 0 8px 20px rgb(0 0 0 / 0.4); }
+:root[data-theme="dark"] .seat-peek b { color: var(--ink); }
 :root[data-theme="dark"] .turn-timer.low { background: #dc2626; color: #fff; }
 /* Player-chosen colours can be very dark: lift them where they are text or strokes on dark. */
 :root[data-theme="dark"] .chat-msg b, :root[data-theme="dark"] .chat-flyout b { filter: brightness(1.6) saturate(0.9); }
@@ -841,8 +843,14 @@ body { overflow-x: clip; }
     left: 50%; transform: translateX(-50%); width: 96px; right: auto;
     top: calc(50% - var(--fan-len, 200px) / 2 - 54px); bottom: calc(50% - var(--fan-len, 200px) / 2 - 24px);
   }
+  /* The player on turn: their panel only turns a shade darker (brighter in the dark theme). */
+  .seat-left.active::before, .seat-right.active::before { animation: none; filter: none; transform: translateX(-50%); }
   .seat.active.seat-top, .seat.active.me, .seat-left.active::before, .seat-right.active::before {
-    box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(249 115 22 / 0.35), var(--shadow);
+    background: color-mix(in srgb, var(--glass) 86%, #0f172a);
+  }
+  :root[data-theme="dark"] .seat.active.seat-top, :root[data-theme="dark"] .seat.active.me,
+  :root[data-theme="dark"] .seat-left.active::before, :root[data-theme="dark"] .seat-right.active::before {
+    background: color-mix(in srgb, var(--glass) 82%, white);
   }
 }
 

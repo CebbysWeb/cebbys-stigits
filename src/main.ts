@@ -171,6 +171,9 @@ const events = {
       }
     }
     if (s.game?.lastMove !== prevMove) selected = null
+    // Someone else moved a stick: slide it from where it was once the board is redrawn.
+    const mv = s.game?.lastMove
+    if (mv && JSON.stringify(mv) !== JSON.stringify(prevMove) && prev && prev.players[prev.current]?.id !== session?.myId) slideFrom = mv
     // Rebuilding the board mid-drag would drop the stick; endDrag renders instead.
     if (!drag) render()
     else pile.update(s.game?.played.map((p) => p.card) ?? [])
@@ -265,6 +268,7 @@ function render(): void {
       hand.update(me.hand)
     }
     app.querySelector('#pile-slot')?.replaceWith(pile.el)
+    if (slideFrom) slideStick(slideFrom)
     app.querySelector('#draw-slot')?.replaceWith(drawPile)
     paintDrawPile(g.pileLeft)
     // The first frame was framed before the play area existed; reframe now that it is laid out.
@@ -630,7 +634,7 @@ app.addEventListener('click', async (e) => {
 // The board fills the screen, so the view takes the window's shape.
 const boardAspect = () => window.innerHeight / Math.max(1, window.innerWidth)
 const RECENTER_DELAY_MS = 900
-const RECENTER_SECONDS = 1.2
+const RECENTER_SECONDS = 1.8
 let camFresh = false
 const cam = { x: 0, y: 0, w: 8, ready: false, idleSince: 0 }
 let pan: { pointerId: number; startX: number; startY: number; camX: number; camY: number } | null = null
@@ -712,12 +716,35 @@ const PILE_REACH = 2.5 + 1
 const PILE_SQUARES = 2
 
 /** The piles are pinned to the grid either side of the shape centre, so they move only with it (or the camera). */
+/** A stick another player moved, to slide into place on the next redraw. */
+let slideFrom: { from: Stick; to: Stick } | null = null
+function slideStick(m: { from: Stick; to: Stick }): void {
+  slideFrom = null
+  const el = app.querySelector<SVGGElement>('.board .stick.moved')
+  if (!el || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const [a, b] = [midpoint(m.from), midpoint(m.to)]
+  const turn = m.from.d === m.to.d ? 0 : 90
+  el.style.transformBox = 'fill-box'
+  el.style.transformOrigin = 'center'
+  // Board y runs up, SVG y runs down; one lattice unit is one SVG unit.
+  el.animate([
+    { transform: `translate(${a.x - b.x}px, ${b.y - a.y}px) rotate(${turn}deg)` },
+    { transform: 'translate(0, 0) rotate(0deg)' },
+  ], { duration: 650, easing: 'cubic-bezier(.25, .8, .25, 1)' })
+}
+
+/** Where the piles are centred, eased toward the shape so they glide when it changes. */
+let pileBox: { x: number; y: number } | null = null
+
 function placePiles(): void {
   const g = snapshot?.game
   const ctm = app.querySelector<SVGSVGElement>('.board')?.getScreenCTM()
   if (!g || !ctm || !pile.el.isConnected) return
   const box = shapeBox(g)
-  const c = new DOMPoint(box.x, box.y).matrixTransform(ctm)
+  if (!pileBox) pileBox = { x: box.x, y: box.y }
+  pileBox.x += (box.x - pileBox.x) * 0.08
+  pileBox.y += (box.y - pileBox.y) * 0.08
+  const c = new DOMPoint(pileBox.x, pileBox.y).matrixTransform(ctm)
   const unit = Math.hypot(ctm.a, ctm.b)
   // Portrait phones: pickup pile left of my cards, played pile right of them, by my name.
   const label = narrow.matches ? app.querySelector('.seat-bottom .seat-label')?.getBoundingClientRect() : null
@@ -812,7 +839,7 @@ function frame(now: number): void {
     cam.w += (t.w - cam.w) * k
     board.setAttribute('viewBox', camViewBox(g))
   }
-  if (!g) cam.ready = false
+  if (!g) { cam.ready = false; pileBox = null }
   placePiles()
   tickTimer()
   requestAnimationFrame(frame)
