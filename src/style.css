@@ -21,7 +21,7 @@
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
-  color-scheme: light;
+  color-scheme: only light;
 }
 
 * { box-sizing: border-box; }
@@ -638,3 +638,8 @@ body.in-game input, body.in-game textarea { -webkit-user-select: text; user-sele
 /* Hidden, the connection bar's shadow must not peek over the top edge. */
 .net-bar:not(.show) { box-shadow: none; visibility: hidden; transition: transform 0.25s, visibility 0s 0.25s; }
 .net-bar.show { padding-top: max(8px, env(safe-area-inset-top)); }
+/* The code box shrinks to fit beside its button on narrow phones. */
+.join-card .row { display: flex; min-width: 0; max-width: 100%; }
+.join-card .row input { flex: 1 1 auto; width: 0; min-width: 0; }
+.join-card .row button { flex: 0 0 auto; }
+html, body { max-width: 100%; overflow-x: hidden; }
