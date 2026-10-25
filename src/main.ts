@@ -168,7 +168,7 @@ const events = {
         const fan = el.closest<HTMLElement>('.fan')
         // A collapsed seat hides its fan: the card leaves from the pile instead.
         let from = el.getBoundingClientRect()
-        if (!from.width) from = el.closest('.seat')?.querySelector('.seat-pile')?.getBoundingClientRect() ?? from
+        if (getComputedStyle(el).visibility === 'hidden') from = el.closest('.seat')?.querySelector('.seat-pile')?.getBoundingClientRect() ?? from
         flight = { card: c.card, from, opacity: fan ? Number(getComputedStyle(fan).opacity) : 1 }
         el.style.visibility = 'hidden'
       }
